@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#171d1a" />
+  <meta name="description" content="Re-development of Poorna Market — an architectural design project with immersive 3D exploration, desktop walkthrough, VR and architectural drawings." />
+  <title>Poorna Market — Architecture in Motion</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@0,500;0,600;1,500;1,600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+  <script type="importmap">
+  {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"}}
+  </script>
+  <script src="/main.js" defer></script>
+  <script type="module" src="/viewer.js"></script>
+</head>
+<body>
+<div class="progress-bar" id="scrollBar"></div>
+<header class="site-header" id="top">
+  <a class="logo" href="#home" aria-label="Poorna Market — Home"><span class="logo-icon"><i></i><i></i><i></i></span><span>POORNA <b>MARKET</b><small>ARCHITECTURAL EXPERIENCE</small></span></a>
+  <nav class="nav-links" id="mainNav" aria-label="Main navigation">
+    <a href="#project">The project</a><a href="#experience">Explore 3D</a><a href="#drawings">Drawings</a><a href="#process">Design story</a>
+  </nav>
+  <div class="header-end"><span class="issue">STUDIO / IX</span><a class="header-cta" href="#experience">Enter experience <span aria-hidden="true">↗</span></a></div>
+  <button class="menu-toggle" id="menuToggle" aria-expanded="false" aria-label="Toggle navigation"><span></span><span></span></button>
+</header>
+<main>
+  <section id="home" class="hero">
+    <div class="hero-inner wrap">
+      <div class="hero-copy">
+        <p class="eyebrow"><span class="tiny-line"></span> RE-DEVELOPMENT OF POORNA MARKET <span class="eyebrow-index">/ 2026</span></p>
+        <h1>The market,<br><em>reimagined.</em></h1>
+        <p class="hero-intro">Architecture made to be experienced. Discover the planning, spaces and story behind a renewed urban marketplace.</p>
+        <div class="hero-actions"><a class="button primary-button" href="#experience"><span class="play-dot">✳</span> Explore the 3D market <span class="button-arrow">↗</span></a><a class="text-button" href="#project">Discover the project <span>↗</span></a></div>
+        <div class="hero-meta"><span>ARCHITECTURAL DESIGN STUDIO</span><span>IX / SEMESTER</span><span>SCROLL TO DISCOVER ↓</span></div>
+      </div>
+      <div class="hero-art" aria-label="Architectural project plan illustration">
+        <div class="art-grid"></div>
+        <figure class="hero-plan"><img src="/assets/site-plan.webp" alt="Site plan and contextual architectural diagram for the re-development of Poorna Market" /></figure>
+        <div class="art-label top-label">01 / A CITY SPACE, RECONSIDERED</div>
+        <div class="art-label side-label">PLACES / PEOPLE / EXCHANGE</div>
+        <div class="floating-label"><span class="floating-bar"></span> A NEW VISION FOR<br>THE EVERYDAY MARKET</div>
+        <div class="hero-number">01<span>/ 05</span></div>
+      </div>
+    </div>
+    <div class="hero-bottom-line wrap"><span>VIRTUAL ARCHITECTURAL EXHIBITION</span><span>VISAKHAPATNAM · MARKET RE-DEVELOPMENT</span><span class="hero-bottom-arrow">↓</span></div>
+  </section>
+
+  <section class="section intro" id="project">
+    <div class="wrap">
+      <div class="section-head"><div class="section-id"><span class="square-dot"></span> 01 / THE PROJECT</div><div class="section-rule"></div><span class="section-side">CONTEXT · INTENT · IDENTITY</span></div>
+      <div class="intro-grid">
+        <div><p class="overline">RE-IMAGINING URBAN EXCHANGE</p><h2>A place for trade.<br>A place to <em>belong.</em></h2></div>
+        <div class="intro-right"><p class="lead">Poorna Market is explored here as a layered public place — bringing everyday commerce, movement and shared urban life into one architectural proposal.</p><p class="body-copy">The project presentation documents site analysis, form development, stall typologies, multiple floor levels, elevations and sections. Explore the architecture from the drawing board to a full-scale interactive environment.</p><div class="detail-pills"><span>PUBLIC MARKET</span><span>ARCHITECTURAL RE-DEVELOPMENT</span><span>3D + VR EXPERIENCE</span></div></div>
+      </div>
+      <div class="feature-media">
+        <div class="feature-image"><img loading="lazy" src="/assets/panel-site.webp" alt="Poorna Market site analysis, conceptual development, site plan and ground-level site context" /><span>01 — SITE / CONCEPT / CONTEXT</span></div>
+        <div class="feature-aside"><div class="thin-mark">PM <small>2026</small></div><h3>Every plan<br>begins with<br><em>a place.</em></h3><p>See the original presentation materials that inform the spatial proposal.</p><a href="#drawings" class="arrow-link">View project drawings <span>↗</span></a></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="experience-section" id="experience">
+    <div class="wrap">
+      <div class="section-head dark-head"><div class="section-id"><span class="square-dot"></span> 02 / IMMERSIVE EXPLORATION</div><div class="section-rule"></div><span class="section-side">REAL-TIME THREE-DIMENSIONAL SPACE</span></div>
+      <div class="experience-heading"><div><p class="overline light">THE ARCHITECTURE IS THE EXHIBIT</p><h2>Don't just see it.<br><em>Step inside.</em></h2></div><p>Explore your actual market model — from a bird's-eye perspective down to a human-scale walk through its spatial organization.</p></div>
+      <div class="viewer-shell" id="viewerShell">
+        <div class="viewer-top"><div class="viewer-brand"><span class="viewer-mark">◈</span><div><strong>POORNA / 3D</strong><small>LIVE ARCHITECTURAL EXPLORER</small></div></div><div class="viewer-top-right"><span class="live-indicator"></span><span id="modelState">MODEL READY TO LOAD</span><button id="fullscreenBtn" class="icon-btn" aria-label="Expand model viewer" title="Expand viewer">⛶</button></div></div>
+        <div class="viewport" id="viewport">
+          <div class="canvas-mount" id="canvasMount" aria-label="Interactive 3D scene" tabindex="0"></div>
+          <div class="viewer-splash" id="viewerSplash"><div class="splash-hatch"></div><div class="splash-content"><span class="splash-eyebrow">THE PHYSICAL SPACE · IN DIGITAL FORM</span><h3>Walk through<br><em>the proposal.</em></h3><p>Explore the optimized 3D model of Poorna Market. The first load downloads about 79 MB; a stable connection and desktop browser are recommended.</p><button id="loadModelBtn" class="button light-button">Load the actual market model <span>↗</span></button><div class="load-progress" id="loadProgress" hidden><span id="loadProgressText">Preparing geometry…</span><div class="progress-track"><span id="loadProgressBar"></span></div></div></div><span class="splash-corner">MODEL / SVP MARKET</span></div>
+          <div class="viewer-annotation" id="viewerAnnotation"><span class="live-indicator"></span> <span id="viewModeName">PERSPECTIVE / ORBIT</span></div>
+          <div class="compass" aria-hidden="true">N<br><span>↑</span></div>
+          <div class="viewport-actions"><button id="resetViewBtn" title="Reset camera">⟲ <span>Reset view</span></button><button id="helpBtn" title="Viewer controls">? <span>Controls</span></button></div>
+          <div class="viewer-help" id="viewerHelp" hidden><strong>DESKTOP CONTROLS</strong><p>Orbit: drag · Zoom: scroll</p><p>Walk: W A S D · Look: click inside viewer</p><p>Shift: move faster · Esc: release cursor</p><p>VR: use headset browser and controllers</p><button id="closeHelpBtn">Close ×</button></div>
+        </div>
+        <div class="viewer-toolbar"><div class="mode-tabs" role="group" aria-label="View mode"><button class="mode-tab selected" data-mode="orbit">◉ <span>Orbit</span></button><button class="mode-tab" data-mode="walk">♙ <span>Walkthrough</span></button><button class="mode-tab" data-mode="plan">▦ <span>Plan view</span></button></div><div class="viewer-ctas"><button id="fileButton" class="file-select">＋ Upload GLB</button><input id="modelFile" type="file" accept=".glb,model/gltf-binary" hidden /><button id="vrEnterBtn" class="vr-button">◫ &nbsp; Enter VR <span>↗</span></button></div></div>
+        <div class="viewer-footer"><span id="viewerStatus" role="status">Your architectural model is ready to load.</span><span>DESKTOP / WEBXR · REAL MODEL</span></div>
+      </div>
+      <div class="explore-features"><div><span class="features-num">01</span><h3>Observe the form</h3><p>Orbit around the proposal and inspect the overall architectural composition.</p></div><div><span class="features-num">02</span><h3>Experience the scale</h3><p>Switch to a first-person view and navigate with mouse and keyboard.</p></div><div><span class="features-num">03</span><h3>Enter another dimension</h3><p>Experience immersive VR in a compatible headset browser. Performance depends on device capabilities.</p></div></div>
+    </div>
+  </section>
+
+  <section class="section drawings" id="drawings">
+    <div class="wrap">
+      <div class="section-head"><div class="section-id"><span class="square-dot"></span> 03 / THE DRAWINGS</div><div class="section-rule"></div><span class="section-side">ORIGINAL ARCHITECTURAL DOCUMENTATION</span></div>
+      <div class="drawings-top"><div><p class="overline">BEYOND THE PERSPECTIVE</p><h2>From lines<br>to <em>life.</em></h2></div><p>Study the decisions behind the space through the original project panels. Select any drawing for a closer view.</p></div>
+      <div class="filter-row" role="group" aria-label="Filter drawings"><button class="filter active" data-filter="all">All documentation <sup>08</sup></button><button class="filter" data-filter="context">Site & concept</button><button class="filter" data-filter="plans">Floor plans</button><button class="filter" data-filter="sections">Sections & elevations</button></div>
+      <div class="gallery-grid" id="galleryGrid">
+        <button class="gallery-card wide" data-group="context" data-src="/assets/panel-site.webp" data-title="Site analysis & form development"><div class="gallery-img"><img loading="lazy" src="/assets/panel-site.webp" alt="Poorna Market presentation board with site analysis, form development and site plans" /></div><div class="gallery-meta"><span><b>01 / SITE & CONCEPT</b><small>Site analysis · Concept diagrams · Site context</small></span><i>↗</i></div></button>
+        <button class="gallery-card" data-group="plans" data-src="/assets/ground-plan.webp" data-title="Ground floor plan"><div class="gallery-img"><img loading="lazy" src="/assets/ground-plan.webp" alt="Ground floor plan with central court and stall layouts" /></div><div class="gallery-meta"><span><b>02 / GROUND FLOOR</b><small>Stall layout · Courtyard · Circulation</small></span><i>↗</i></div></button>
+        <button class="gallery-card" data-group="plans" data-src="/assets/upper-plan.webp" data-title="Podium and first floor plan"><div class="gallery-img"><img loading="lazy" src="/assets/upper-plan.webp" alt="Podium and first-floor architectural plan" /></div><div class="gallery-meta"><span><b>03 / UPPER LEVELS</b><small>Podium · First floor · Connections</small></span><i>↗</i></div></button>
+        <button class="gallery-card" data-group="context" data-src="/assets/design-evolution.webp" data-title="Form development"><div class="gallery-img"><img loading="lazy" src="/assets/design-evolution.webp" alt="Conceptual evolution and form development diagrams" /></div><div class="gallery-meta"><span><b>04 / FORM DEVELOPMENT</b><small>Process · Spatial organization</small></span><i>↗</i></div></button>
+        <button class="gallery-card wide" data-group="sections" data-src="/assets/panel-drawings.webp" data-title="Sections, elevations and upper floor plans"><div class="gallery-img"><img loading="lazy" src="/assets/panel-drawings.webp" alt="Architectural board with multiple floor plans, elevations, sections and rendering views" /></div><div class="gallery-meta"><span><b>05 / ARCHITECTURAL DRAWINGS</b><small>Second floor · Third floor · Building sections · Elevations</small></span><i>↗</i></div></button>
+        <button class="gallery-card" data-group="sections" data-src="/assets/market-section.webp" data-title="Architectural section"><div class="gallery-img"><img loading="lazy" src="/assets/market-section.webp" alt="Architectural sectional drawings" /></div><div class="gallery-meta"><span><b>06 / SECTIONS</b><small>Vertical relationships · Spatial volume</small></span><i>↗</i></div></button>
+        <button class="gallery-card" data-group="sections" data-src="/assets/market-elevation.webp" data-title="Market elevations"><div class="gallery-img"><img loading="lazy" src="/assets/market-elevation.webp" alt="Architectural market elevation drawings" /></div><div class="gallery-meta"><span><b>07 / ELEVATIONS</b><small>Building envelope · Street presence</small></span><i>↗</i></div></button>
+        <button class="gallery-card" data-group="context" data-src="/assets/panel-full.webp" data-title="Full project presentation"><div class="gallery-img"><img loading="lazy" src="/assets/panel-full.webp" alt="Full Poorna Market architectural presentation panel" /></div><div class="gallery-meta"><span><b>08 / COMPLETE PRESENTATION</b><small>The entire architectural story</small></span><i>↗</i></div></button>
+      </div>
+      <p class="gallery-note">Documentation is sourced from the provided pre-final presentation PDF. For the finest printed annotations, refer to the original PDF.</p>
+    </div>
+  </section>
+
+  <section class="story-section" id="process"><div class="wrap">
+    <div class="section-head"><div class="section-id"><span class="square-dot"></span> 04 / DESIGN NARRATIVE</div><div class="section-rule"></div><span class="section-side">PROCESS · PROGRAM · EXPERIENCE</span></div>
+    <div class="story-grid"><div class="story-intro"><p class="overline">A PROJECT IN LAYERS</p><h2>Every space<br>has a <em>story.</em></h2><p>From reading the site to shaping market activity, the project is developed through a sequence of planning and design decisions.</p><a class="arrow-link" href="#drawings">Explore the drawing archive <span>↗</span></a></div><div class="story-list">
+      <article><span>01</span><div><h3>Understanding the context</h3><p>Site analysis, surrounding movement, access and opportunity.</p></div><span class="story-arrow">↗</span></article>
+      <article><span>02</span><div><h3>Developing the form</h3><p>Concept diagrams and the architectural evolution of the proposal.</p></div><span class="story-arrow">↗</span></article>
+      <article><span>03</span><div><h3>Organizing the market</h3><p>Stall typologies, trading areas, circulation and linked floor levels.</p></div><span class="story-arrow">↗</span></article>
+      <article><span>04</span><div><h3>Experiencing the architecture</h3><p>Plans and sections brought into the spatial language of real-time 3D.</p></div><span class="story-arrow">↗</span></article>
+    </div></div>
+  </div></section>
+  <section class="closing"><div class="wrap closing-inner"><p class="overline light">AN ARCHITECTURAL EXPERIENCE / 2026</p><h2>Space becomes<br><em>experience.</em></h2><a class="button light-button" href="#experience">Enter the market <span>↗</span></a><div class="closing-pattern">P.</div></div></section>
+</main>
+<footer><div class="wrap footer-inner"><a class="footer-logo" href="#top">POORNA <em>MARKET</em><small>IX SEMESTER / ARCHITECTURAL DESIGN</small></a><p>RE-DEVELOPMENT OF POORNA MARKET<br>VISUALIZATION · ARCHITECTURE · EXPLORATION</p><div><a href="#project">Project</a><a href="#experience">3D & VR</a><a href="#drawings">Drawings</a><a href="#top">Back to top ↑</a></div></div><div class="wrap footer-end"><span>DESIGNED TO BE DISCOVERED · 2026</span><span>ACADEMIC PROJECT / INTERACTIVE PRESENTATION</span></div></footer>
+<div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="Architectural drawing preview" hidden><div class="lightbox-head"><span id="lightboxTitle">Architectural drawing</span><div><span>Scroll to zoom in your browser</span><button id="lightboxClose" aria-label="Close image preview">×</button></div></div><div class="lightbox-body"><img id="lightboxImg" alt="Selected architectural presentation drawing" /></div></div>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
