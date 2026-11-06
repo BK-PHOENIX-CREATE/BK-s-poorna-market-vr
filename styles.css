@@ -52,3 +52,19 @@
 .minimap-foot{font-size:8px;color:#dec699}
 #mobileMotionBtn[aria-pressed="true"],#mobileStereoBtn[aria-pressed="true"]{background:#d7bc8e!important;color:#17251e!important}
 @media(max-width:700px){.poorna-minimap{left:7px;bottom:7px;width:132px;max-width:38%}.minimap-title,.minimap-foot{font-size:7px;padding:5px}.viewer-ctas{flex-wrap:wrap}}
+
+
+/* Interactive jury Tour Planner */
+#tourEditorToggle{background:#c9b38d;color:#17271d;border-color:#c9b38d;font-weight:700}
+.tour-editor{background:#e9e9de;color:#1b3125;padding:19px 24px 20px;border:1px solid #b2baa9;display:grid;grid-template-columns:minmax(140px,1fr) minmax(180px,2fr);gap:9px 14px;font:12px/1.5 var(--sans)}
+.tour-editor-head{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:15px;margin-bottom:5px;flex-wrap:wrap}
+.tour-editor-head strong{font:700 13px var(--sans);letter-spacing:.13em}
+.tour-editor-head span{font-size:11px;color:#54675a}
+.tour-editor-actions{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin:5px 0}
+.tour-editor-actions button,.tour-import-label{display:inline-flex;align-items:center;justify-content:center;min-height:33px;padding:6px 11px;border:1px solid #5b7662;background:#244331;color:#f5efe2;font:600 11px var(--sans);cursor:pointer}
+.tour-editor-actions button:disabled{opacity:.38;cursor:not-allowed}
+.tour-editor label:not(.tour-import-label){font:700 10px var(--sans);letter-spacing:.13em;color:#3e5946;align-self:center}
+.tour-editor input:not([type=file]),.tour-editor textarea,.tour-editor select{width:100%;min-width:0;border:1px solid #9cac9b;background:#fffdf8;color:#16281c;padding:8px 11px;font:12px/1.5 var(--sans);border-radius:0}
+.tour-editor textarea{resize:vertical;min-height:62px}
+#tourEditorStatus{grid-column:1/-1;color:#46644e;font:11px/1.5 var(--sans);margin:6px 0 0}
+@media(max-width:750px){.tour-editor{grid-template-columns:1fr;padding:14px}.tour-editor-head,.tour-editor-actions,#tourEditorStatus{grid-column:1}.tour-editor label:not(.tour-import-label){margin-top:5px}}
