@@ -86,13 +86,6 @@
 #projectFilm{display:block;width:100%;max-height:min(75vh,860px);aspect-ratio:16/9;object-fit:contain;background:#0d1612}
 @media(max-width:760px){.film-section{padding:80px 0}.film-intro{flex-direction:column;align-items:flex-start;gap:12px}.film-topline,.film-bottomline{padding:12px;font-size:8px;letter-spacing:.07em}.film-section .section-head{margin-bottom:35px}}
 
-/* Persistent Quest diagnostic readout available after leaving immersive XR */
-.vr-debug-report{border-top:1px solid #617462;background:#132b21;color:#f0f4ec;padding:15px 22px;font:12px/1.5 var(--sans)}
-.vr-debug-report summary{font-weight:700;letter-spacing:.065em;color:#ead2a0;cursor:pointer}
-.vr-debug-report p{color:#c7d3c8;margin:9px 0}
-.vr-debug-report pre{white-space:pre-wrap;word-break:break-word;background:#0c1e15;color:#e3efe4;border:1px solid #637e68;padding:12px;font:12px/1.55 ui-monospace,Consolas,monospace}
-.vr-debug-report button{background:#e0c295;color:#17301f;border:0;padding:10px 14px;font-weight:700;cursor:pointer}
-
 /* Accurate user-saved desktop/VR spawn controls */
 .viewport-actions{flex-wrap:wrap;max-width:calc(100% - 50px);z-index:7}
 .viewport-actions button[hidden]{display:none!important}
