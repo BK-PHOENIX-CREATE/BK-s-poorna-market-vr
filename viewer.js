@@ -103,7 +103,13 @@ async function buildWalkPhysics(){
    for(let i=0;i<meshes.length;i++){
      const geometry=meshes[i].geometry;
      if(!geometry.boundsTree)geometry.computeBoundsTree({maxLeafSize:20});
-     collisionMeshes.push(meshes[i]);
+     // Use a collision-only double-sided copy of the mesh transform.
+     // SketchUp GLB ramp/slab faces may face downward or be back-face culled.
+     const collider=new THREE.Mesh(geometry,new THREE.MeshBasicMaterial({side:THREE.DoubleSide}));
+     collider.matrixAutoUpdate=false;
+     collider.matrix.copy(meshes[i].matrixWorld);
+     collider.matrixWorld.copy(meshes[i].matrixWorld);
+     collisionMeshes.push(collider);
      if(i%3===0){status('Indexing building surfaces '+(i+1)+' / '+meshes.length);await new Promise(resolve=>setTimeout(resolve,0))}
    }
    collisionReady=true;status('Real floor collisions ready.');return true;
@@ -205,7 +211,7 @@ function load(file){
  const isBlob=file instanceof File;const url=isBlob?URL.createObjectURL(file):file;
  loader.load(url,gltf=>{
   if(model){scene.remove(model);model.traverse(obj=>{if(obj.isMesh){obj.geometry?.disposeBoundsTree?.();obj.geometry?.dispose?.()}})}
-   collisionMeshes=[];collisionReady=false;collisionPromise=null;fallSpeed=0;
+   collisionMeshes.forEach(mesh=>mesh.material?.dispose?.());collisionMeshes=[];collisionReady=false;collisionPromise=null;fallSpeed=0;
   model=gltf.scene;
   let meshCount=0;model.traverse(obj=>{if(obj.isMesh){meshCount++;obj.castShadow=false;obj.receiveShadow=false;obj.frustumCulled=true}});
   // Source model is pre-batched, positioned at ground level, and measured in meters.
@@ -272,10 +278,10 @@ function xrGroundFollow(head,dx,dz,dt){
  const feet=rig.position.y;
  const blocked=xrWallBlocked(head,dx,dz);
  let targetX=head.x+(blocked?0:dx),targetZ=head.z+(blocked?0:dz);
- let floor=floorAt(targetX,targetZ,feet,STEP,1.8);
+ let floor=floorAt(targetX,targetZ,feet,Math.max(STEP,.72),2.1);
  if(floor!==null&&floor>feet+STEP+.015){
    targetX=head.x;targetZ=head.z;
-   floor=floorAt(targetX,targetZ,feet,STEP,1.8);
+   floor=floorAt(targetX,targetZ,feet,Math.max(STEP,.72),2.1);
  }
  const tx=targetX-head.x,tz=targetZ-head.z;
  rig.position.x+=tx;rig.position.z+=tz;
