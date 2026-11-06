@@ -44,13 +44,82 @@ function notice(s){(window.marketToast||console.warn)(s)}
 // Shared entrance-side corner spawn for desktop Walk and immersive Quest VR.
 // The min-X / max-Z corner shows the long entrance façade receding to the
 // right, as in the project's preferred exterior walkthrough screenshot.
+// Save an exact desktop Walk viewpoint as the common Walk + Quest spawn.
+// Local storage remembers it in this browser; the share URL transfers it
+// to another device (including Meta Quest Browser).
+const START_STORAGE='poorna-walk-vr-start-v1';
+let chosenStart=null;
+function validStart(value){
+ return value&&Array.isArray(value.position)&&value.position.length===3&&
+ value.position.every(n=>Number.isFinite(n)&&Math.abs(n)<10000)&&
+ Number.isFinite(value.yaw)&&Math.abs(value.yaw)<100;
+}
+function parseStart(raw){
+ try{
+  const vals=raw.split(',').map(Number);
+  const value={position:vals.slice(0,3),yaw:vals[3]};
+  return vals.length===4&&validStart(value)?value:null;
+ }catch{return null}
+}
+try{
+ const fromURL=new URLSearchParams(window.location.search).get('start');
+ const stored=JSON.parse(localStorage.getItem(START_STORAGE)||'null');
+ chosenStart=(fromURL?parseStart(fromURL):null)||(validStart(stored)?stored:null);
+ if(chosenStart&&fromURL)localStorage.setItem(START_STORAGE,JSON.stringify(chosenStart));
+}catch(e){console.warn('Start view storage unavailable',e)}
+function setStartButtons(){
+ const has=!!chosenStart;
+ const save=$('saveWalkStartBtn'),share=$('shareWalkStartBtn'),clear=$('clearWalkStartBtn');
+ if(save)save.hidden=currentMode!=='walk'||!modelLoaded||renderer.xr.isPresenting;
+ if(share)share.hidden=!has;
+ if(clear)clear.hidden=!has;
+}
+function startLink(){
+ const url=new URL(window.location.href);
+ url.hash='experience';
+ const encoded=[...chosenStart.position,chosenStart.yaw].map(n=>n.toFixed(4)).join(',');
+ url.searchParams.set('start',encoded);
+ return url.href;
+}
+function writeStartToUI(){
+ setStartButtons();
+ if(chosenStart&&modelLoaded)status('Custom Walk / Quest spawn loaded · save another viewpoint to replace it');
+}
+$('saveWalkStartBtn')?.addEventListener('click',()=>{
+ if(currentMode!=='walk'||!modelLoaded||renderer.xr.isPresenting){notice('Switch to Walk Mode and face the exact view you want first.');return}
+ chosenStart={position:[camera.position.x,camera.position.y-EYE,camera.position.z],yaw};
+ try{localStorage.setItem(START_STORAGE,JSON.stringify(chosenStart))}catch(e){}
+ setStartButtons();
+ status('Starting view saved for Walk and VR. Copy its link to use it on Quest 3.');
+ notice('Starting view saved. Use Copy start link to open this exact view on Quest 3.');
+});
+$('shareWalkStartBtn')?.addEventListener('click',async()=>{
+ if(!chosenStart)return;
+ const link=startLink();
+ try{await navigator.clipboard.writeText(link);notice('Starting-view link copied. Open this link on your Quest 3.')}
+ catch(e){window.prompt('Copy starting-view link for Quest 3:',link)}
+});
+$('clearWalkStartBtn')?.addEventListener('click',()=>{
+ chosenStart=null;
+ try{localStorage.removeItem(START_STORAGE)}catch(e){}
+ const url=new URL(window.location.href);url.searchParams.delete('start');
+ window.history.replaceState(null,'',url.pathname+url.search+url.hash);
+ setStartButtons();status('Custom starting view cleared');
+});
+
 function entranceSpawn(){
+ if(chosenStart&&validStart(chosenStart)){
+  const position=new THREE.Vector3(...chosenStart.position);
+  const target=position.clone().add(new THREE.Vector3(-Math.sin(chosenStart.yaw),0,-Math.cos(chosenStart.yaw)).multiplyScalar(12));
+  return {position,target};
+ }
  const b=modelBounds,sz=b.getSize(new THREE.Vector3());
  const position=new THREE.Vector3(b.min.x-Math.max(3,sz.x*.035),b.min.y,b.max.z+Math.max(6,sz.z*.11));
  const target=new THREE.Vector3(b.min.x+sz.x*.52,b.min.y+EYE,b.max.z-sz.z*.20);
  return {position,target};
 }
 function entranceYaw(){
+ if(chosenStart&&validStart(chosenStart))return chosenStart.yaw;
  const {position,target}=entranceSpawn();
  const direction=target.sub(position);
  return Math.atan2(-direction.x,-direction.z);
@@ -86,6 +155,7 @@ function setMode(next){
  document.querySelectorAll('.mode-tab').forEach(b=>b.classList.toggle('selected',b.dataset.mode===next));
  if(document.pointerLockElement===renderer.domElement)document.exitPointerLock?.();
  makeCamera(next);
+ setStartButtons();
 }
 document.querySelectorAll('.mode-tab').forEach(btn=>btn.addEventListener('click',async()=>{
  const next=btn.dataset.mode;
@@ -261,7 +331,7 @@ function load(file){
   if(modelSize.x>2000||modelSize.z>2000){const scale=95/Math.max(modelSize.x,modelSize.z);model.scale.setScalar(scale);modelBounds.setFromObject(model)}
   scene.add(model);
   modelLoaded=true;isLoading=false;tag.textContent='ACTUAL MARKET MODEL LOADED';splash.hidden=true;progress.hidden=true;grid.visible=false;ground.visible=true;
-  setMode('orbit');buildWalkPhysics().catch(error=>console.error('Preparing VR walking surfaces',error));window.poornaExhibition?.modelReady();window.poornaNavigation?.modelReady();status(`Loaded successfully · ${meshCount} draw groups · Orbit / Sky / Walk / Plan / VR available`);
+  setMode('orbit');writeStartToUI();buildWalkPhysics().catch(error=>console.error('Preparing VR walking surfaces',error));window.poornaExhibition?.modelReady();window.poornaNavigation?.modelReady();status(`Loaded successfully · ${meshCount} draw groups · Orbit / Sky / Walk / Plan / VR available`);
   if(isBlob)URL.revokeObjectURL(url);
  },evt=>{if(evt.lengthComputable){const pct=Math.min(98,Math.round(evt.loaded/evt.total*100));bar.style.width=pct+'%';progText.textContent=`Downloading 3D architecture · ${pct}%`;
  }else{progText.textContent=`Downloading model · ${(evt.loaded/1024/1024).toFixed(0)} MB received`}
