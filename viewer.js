@@ -109,6 +109,9 @@ async function buildWalkPhysics(){
      collider.matrixAutoUpdate=false;
      collider.matrix.copy(meshes[i].matrixWorld);
      collider.matrixWorld.copy(meshes[i].matrixWorld);
+     // Bounds cached once for broad-phase capsule collision culling.
+     geometry.computeBoundingBox();
+     collider.userData.collisionWorldBox=geometry.boundingBox.clone().applyMatrix4(collider.matrixWorld);
      collisionMeshes.push(collider);
      if(i%3===0){status('Indexing building surfaces '+(i+1)+' / '+meshes.length);await new Promise(resolve=>setTimeout(resolve,0))}
    }
@@ -253,49 +256,113 @@ function getXRStick(source){
  const x=a.length>=4?(a[2]||0):(a[0]||0),y=a.length>=4?(a[3]||0):(a[1]||0);
  return {x:Math.abs(x)>.16?x:0,y:Math.abs(y)>.16?y:0};
 }
-function xrWallBlocked(head,dx,dz){
- const dist=Math.hypot(dx,dz);
- if(dist<.00001||!collisionReady)return false;
- xrTravel.set(dx/dist,0,dz/dist);
- // Probe walls at knee and upper-torso height from the tracked headset,
- // not from the desktop camera (whose position is unused in immersive XR).
- for(const height of [.55,1.28]){
-   xrCast.set(new THREE.Vector3(head.x,rig.position.y+height,head.z),xrTravel);
-   xrCast.near=0;xrCast.far=dist+.32;xrCast.firstHitOnly=false;
-   const hits=xrCast.intersectObjects(collisionMeshes,false);
-   for(const hit of hits){
-     if(!hit.face)continue;
-     xrWallNormal.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
-     if(Math.abs(xrWallNormal.y)<.52)return true;
-   }
+// Capsule collisions (three-mesh-bvh shapecast) keep the *whole body*
+// outside actual triangles, not just a ray beneath the player's eye.
+const XR_RADIUS=.30,XR_SKIN=.012;
+const xrLocalInverse=new THREE.Matrix4(),xrLocalSegment=new THREE.Line3();
+const xrLocalBox=new THREE.Box3(),xrPointOnTriangle=new THREE.Vector3(),xrPointOnCapsule=new THREE.Vector3();
+const xrPush=new THREE.Vector3(),xrLocalNormal=new THREE.Vector3(),xrBefore=new THREE.Vector3();
+const xrCandidate=new THREE.Vector3(),xrFootWorld=new THREE.Vector3(),xrBodyScale=new THREE.Vector3();
+const xrBodyQuat=new THREE.Quaternion(),xrTmpDelta=new THREE.Vector3();
+let xrGrounded=false,xrHeightAdjust=0;
+function resolveXRCapsule(x,z,footY,eyeY){
+ if(!collisionReady)return {x,z,y:footY,grounded:false};
+ let px=x,pz=z,py=footY,grounded=false;
+ const bodyHeight=THREE.MathUtils.clamp(eyeY-footY,.95,2.05);
+ const capsuleTop=Math.max(.75,bodyHeight-.18);
+ // Two iterations resolve intersecting ramps + nearby wall corners.
+ for(let pass=0;pass<2;pass++){
+  for(const mesh of collisionMeshes){
+   const geometry=mesh.geometry,bvh=geometry.boundsTree;
+   if(!bvh)continue;
+   const worldBox=mesh.userData.collisionWorldBox;
+   if(worldBox&&
+      (px<worldBox.min.x-XR_RADIUS||px>worldBox.max.x+XR_RADIUS||
+       pz<worldBox.min.z-XR_RADIUS||pz>worldBox.max.z+XR_RADIUS||
+       py+capsuleTop+XR_RADIUS<worldBox.min.y||
+       py>worldBox.max.y+XR_RADIUS))continue;
+   xrLocalInverse.copy(mesh.matrixWorld).invert();
+   xrBefore.set(px,py+XR_RADIUS,pz);
+   xrLocalSegment.start.copy(xrBefore).applyMatrix4(xrLocalInverse);
+   xrLocalSegment.end.set(px,py+capsuleTop,pz).applyMatrix4(xrLocalInverse);
+   // Mesh scales are usually 1, but account for GLB transforms.
+   mesh.matrixWorld.decompose(xrCandidate,xrBodyQuat,xrBodyScale);
+   const minScale=Math.max(.0001,Math.min(Math.abs(xrBodyScale.x),Math.abs(xrBodyScale.y),Math.abs(xrBodyScale.z)));
+   const localRadius=XR_RADIUS/minScale;
+   xrLocalBox.makeEmpty().expandByPoint(xrLocalSegment.start).expandByPoint(xrLocalSegment.end).expandByScalar(localRadius+.04);
+   bvh.shapecast({
+    intersectsBounds:bounds=>bounds.intersectsBox(xrLocalBox),
+    intersectsTriangle:triangle=>{
+     const distance=triangle.closestPointToSegment(xrLocalSegment,xrPointOnTriangle,xrPointOnCapsule);
+     if(distance>=localRadius) return;
+     const depth=localRadius-distance+XR_SKIN/minScale;
+     xrPush.subVectors(xrPointOnCapsule,xrPointOnTriangle);
+     if(xrPush.lengthSq()<1e-10){
+       triangle.getNormal(xrLocalNormal);
+       xrPush.copy(xrLocalNormal);
+       // A two-sided ramp should push the player upward when ambiguous.
+       if(Math.abs(xrPush.y)>.52&&xrPush.y<0)xrPush.negate();
+     }
+     xrPush.normalize().multiplyScalar(depth);
+     xrLocalSegment.start.add(xrPush);
+     xrLocalSegment.end.add(xrPush);
+     xrLocalBox.translate(xrPush);
+    }
+   });
+   const newStart=xrLocalSegment.start.clone().applyMatrix4(mesh.matrixWorld);
+   xrTmpDelta.subVectors(newStart,xrBefore);
+   if(xrTmpDelta.y>.005)grounded=true;
+   px+=xrTmpDelta.x;pz+=xrTmpDelta.z;py+=xrTmpDelta.y;
+  }
  }
- return false;
+ return {x:px,z:pz,y:py,grounded};
 }
 function xrGroundFollow(head,dx,dz,dt){
- // If collision building is still underway, disable physical movement
- // instead of letting the headset pass through market floors and ramps.
  if(!collisionReady)return;
- const feet=rig.position.y;
- const blocked=xrWallBlocked(head,dx,dz);
- let targetX=head.x+(blocked?0:dx),targetZ=head.z+(blocked?0:dz);
- let floor=floorAt(targetX,targetZ,feet,Math.max(STEP,.72),2.1);
- if(floor!==null&&floor>feet+STEP+.015){
-   targetX=head.x;targetZ=head.z;
-   floor=floorAt(targetX,targetZ,feet,Math.max(STEP,.72),2.1);
+ const oldFoot=rig.position.y;
+ // XR local-floor tracking gives the real headset eye height. The body
+ // collider is anchored to the tracked head's X/Z, not to the VR rig origin.
+ const eyeHeight=THREE.MathUtils.clamp(head.y-oldFoot,.95,2.1);
+ const steps=Math.max(1,Math.ceil(Math.hypot(dx,dz)/.10));
+ let trackedX=head.x,trackedZ=head.z,foot=oldFoot,grounded=false;
+ for(let i=0;i<steps;i++){
+   const desiredX=trackedX+dx/steps,desiredZ=trackedZ+dz/steps;
+   const resolved=resolveXRCapsule(desiredX,desiredZ,foot,foot+eyeHeight);
+   // Never use a wall collision to drop the headset beneath the slab.
+   const found=floorAt(resolved.x,resolved.z,foot,.65,1.2);
+   let proposedY=resolved.y;
+   if(found!==null&&found>=foot-.40&&found<=foot+.65){
+     proposedY=Math.max(proposedY,found+.007);
+     grounded=true;
+   }
+   rig.position.x+=resolved.x-trackedX;
+   rig.position.z+=resolved.z-trackedZ;
+   rig.position.y+=proposedY-foot;
+   foot=proposedY;
+   trackedX=resolved.x;trackedZ=resolved.z;
+   if(resolved.grounded)grounded=true;
  }
- const tx=targetX-head.x,tz=targetZ-head.z;
- rig.position.x+=tx;rig.position.z+=tz;
- rig.position.x=THREE.MathUtils.clamp(rig.position.x,modelBounds.min.x-15,modelBounds.max.x+15);
- rig.position.z=THREE.MathUtils.clamp(rig.position.z,modelBounds.min.z-15,modelBounds.max.z+15);
- if(floor!==null&&floor>=feet-.75){
-   rig.position.y=floor;xrFallVelocity=0;
+ // Gravity is applied even when stationary and the capsule resolves its
+ // penetration against ground triangles at the end of each step.
+ const support=floorAt(trackedX,trackedZ,foot,.60,1.3);
+ if(support!==null&&support>=foot-.30&&support<=foot+.60){
+   rig.position.y=support+.007;
+   xrFallVelocity=0;
+   xrGrounded=true;
+ }else if(!grounded){
+   xrFallVelocity=Math.min(13,xrFallVelocity+14*dt);
+   const dropped=resolveXRCapsule(trackedX,trackedZ,rig.position.y-xrFallVelocity*dt,rig.position.y+eyeHeight-xrFallVelocity*dt);
+   rig.position.x+=dropped.x-trackedX;rig.position.z+=dropped.z-trackedZ;
+   rig.position.y=dropped.y;
+   if(dropped.grounded)xrFallVelocity=0;
+   xrGrounded=dropped.grounded;
  }else{
-   xrFallVelocity=Math.min(18,xrFallVelocity+16*dt);
-   const nextY=feet-xrFallVelocity*dt;
-   const landing=floorAt(targetX,targetZ,nextY,STEP,1.4);
-   if(landing!==null&&nextY<=landing){rig.position.y=landing;xrFallVelocity=0}
-   else rig.position.y=Math.max(modelBounds.min.y-1,nextY);
+   xrFallVelocity=0;xrGrounded=true;
  }
+ const box=modelBounds.clone().expandByScalar(13);
+ rig.position.x=THREE.MathUtils.clamp(rig.position.x,box.min.x,box.max.x);
+ rig.position.z=THREE.MathUtils.clamp(rig.position.z,box.min.z,box.max.z);
+ if(rig.position.y<modelBounds.min.y-1){rig.position.y=modelBounds.min.y-.08;xrFallVelocity=0}
 }
 function xrSmoothTurn(head,angle){
  if(Math.abs(angle)<.000001)return;
@@ -379,7 +446,7 @@ for(let i=0;i<2;i++){
  const ray=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3(0,0,-1)]),new THREE.LineBasicMaterial({color:0xdac28e}));ray.scale.z=8;controller.add(ray);
  controller.addEventListener('selectstart',()=>{if(renderer.xr.isPresenting)moveToController(controller)})
 }
-renderer.xr.addEventListener('sessionstart',()=>{xrTurnVelocity=0;xrFallVelocity=0;rig.rotation.y=0;buildWalkPhysics().then(ok=>{if(ok&&renderer.xr.isPresenting)status('Quest 3: walk on ramps and floors · left stick move · right stick continuous smooth turning · trigger teleport');});window.poornaNavigation?.vrStart();window.poornaExhibition?.stop();rig.position.set(0,0,modelBounds.max.z+4);status('Quest 3: left joystick walks · right joystick smooth turning · trigger teleports.');tag.textContent='IMMERSIVE VR ACTIVE'});
+renderer.xr.addEventListener('sessionstart',()=>{xrTurnVelocity=0;xrFallVelocity=0;rig.rotation.y=0;buildWalkPhysics().then(ok=>{if(ok&&renderer.xr.isPresenting)status('Quest 3 capsule collision ready: walk on ramps & floors; hold right stick to turn');});window.poornaNavigation?.vrStart();window.poornaExhibition?.stop();rig.position.set(0,0,modelBounds.max.z+4);status('Quest 3: left joystick walks · right joystick smooth turning · trigger teleports.');tag.textContent='IMMERSIVE VR ACTIVE'});
 renderer.xr.addEventListener('sessionend',()=>{window.poornaNavigation?.vrEnd();rig.position.set(0,0,0);tag.textContent=modelLoaded?'ACTUAL MARKET MODEL LOADED':'MODEL READY TO LOAD';setMode('orbit');status('Exited immersive VR mode')});
 $('vrEnterBtn').addEventListener('click',async()=>{
  if(!modelLoaded){notice('Load the actual market model before entering VR.');return}
