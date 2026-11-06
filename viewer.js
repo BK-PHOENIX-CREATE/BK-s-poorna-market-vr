@@ -656,14 +656,198 @@ function moveToController(controller){
  rig.position.y=floor??target.y;
  vrWalkState.velocity=0;
 }
+// Wrist-mounted exhibition tour and one-time-per-entry Quest control guide.
+// Uses the SAME saved stops as the desktop exhibition and jury tour planner.
+// Tour movement is floor-snapped teleportation, not an unsafe camera tween.
+const vrTourCanvas=document.createElement('canvas');
+vrTourCanvas.width=900;vrTourCanvas.height=700;
+const vrTourCtx=vrTourCanvas.getContext('2d');
+const vrTourTexture=new THREE.CanvasTexture(vrTourCanvas);
+vrTourTexture.colorSpace=THREE.SRGBColorSpace;
+const vrTourMaterial=new THREE.MeshBasicMaterial({
+ map:vrTourTexture,side:THREE.DoubleSide,depthTest:false,depthWrite:false,toneMapped:false
+});
+const vrTourPanel=new THREE.Mesh(new THREE.PlaneGeometry(.45,.35),vrTourMaterial);
+vrTourPanel.name='VR controls and guided tour';
+vrTourPanel.position.set(.365,.09,-.15);
+vrTourPanel.rotation.x=-.35;
+vrTourPanel.renderOrder=11020;vrTourPanel.frustumCulled=false;vrTourPanel.visible=false;
+renderer.xr.getController(0).add(vrTourPanel);
+const vrTourTabCanvas=document.createElement('canvas');
+vrTourTabCanvas.width=512;vrTourTabCanvas.height=160;
+const vrTourTabCtx=vrTourTabCanvas.getContext('2d');
+vrTourTabCtx.fillStyle='#1b3026';vrTourTabCtx.fillRect(0,0,512,160);
+vrTourTabCtx.strokeStyle='#d7bd91';vrTourTabCtx.lineWidth=8;vrTourTabCtx.strokeRect(4,4,504,152);
+vrTourTabCtx.textAlign='center';vrTourTabCtx.textBaseline='middle';
+vrTourTabCtx.fillStyle='#fff4dd';vrTourTabCtx.font='bold 54px Arial';
+vrTourTabCtx.fillText('OPEN VR TOUR',256,82);
+const vrTourTabTexture=new THREE.CanvasTexture(vrTourTabCanvas);
+vrTourTabTexture.colorSpace=THREE.SRGBColorSpace;
+const vrTourTab=new THREE.Mesh(new THREE.PlaneGeometry(.20,.0625),
+ new THREE.MeshBasicMaterial({map:vrTourTabTexture,side:THREE.DoubleSide,depthTest:false,depthWrite:false,toneMapped:false}));
+vrTourTab.position.set(.27,.13,-.15);
+vrTourTab.rotation.x=-.35;
+vrTourTab.name='Reopen VR Tour';
+vrTourTab.renderOrder=11020;vrTourTab.frustumCulled=false;vrTourTab.visible=false;
+renderer.xr.getController(0).add(vrTourTab);
+let vrTourPage='intro',vrTourIndex=-1,vrTourMessage='';
+let vrTourButtons=[];
+const vrTourRaycaster=new THREE.Raycaster();
+function vrTourRoundRect(x,y,w,h,r,color){
+ vrTourCtx.fillStyle=color;
+ vrTourCtx.beginPath();vrTourCtx.roundRect(x,y,w,h,r);vrTourCtx.fill();
+}
+function vrTourLine(str,x,y,maxWidth=810,size=31,color='#e5eae1'){
+ vrTourCtx.font='500 '+size+'px Arial';
+ vrTourCtx.fillStyle=color;vrTourCtx.textAlign='left';vrTourCtx.textBaseline='top';
+ const words=String(str||'').split(/\s+/);
+ let line='',yy=y;
+ for(const word of words){
+  const next=line?line+' '+word:word;
+  if(vrTourCtx.measureText(next).width>maxWidth&&line){
+   vrTourCtx.fillText(line,x,yy);yy+=size*1.30;line=word;
+   if(yy>530)break;
+  }else line=next;
+ }
+ if(line&&yy<=535)vrTourCtx.fillText(line,x,yy);
+ return yy+size*1.35;
+}
+function vrTourButton(text,x,y,w,h,action,enabled=true){
+ vrTourRoundRect(x,y,w,h,15,enabled?'#ddc199':'#465449');
+ vrTourCtx.textAlign='center';vrTourCtx.textBaseline='middle';
+ vrTourCtx.font='bold 28px Arial';vrTourCtx.fillStyle=enabled?'#203127':'#b4bfb2';
+ vrTourCtx.fillText(text,x+w/2,y+h/2);
+ if(enabled)vrTourButtons.push({x,y,w,h,action});
+}
+function vrTourRedraw(){
+ vrTourButtons=[];
+ vrTourCtx.fillStyle='#17271f';vrTourCtx.fillRect(0,0,900,700);
+ vrTourCtx.fillStyle='#2b4635';vrTourCtx.fillRect(0,0,900,104);
+ vrTourCtx.fillStyle='#edd6af';vrTourCtx.textAlign='left';vrTourCtx.textBaseline='middle';
+ vrTourCtx.font='bold 34px Arial';
+ vrTourCtx.fillText(vrTourPage==='intro'?'WELCOME TO POORNA MARKET VR':'POORNA MARKET / GUIDED TOUR',34,52);
+ if(vrTourPage==='intro'){
+  const lines=[
+   'LEFT JOYSTICK     Walk forward / back / sideways',
+   'RIGHT JOYSTICK   Hold left or right to turn',
+   'CONTROLLER TRIGGER   Teleport or select buttons',
+   'LEFT CONTROLLER   Map, tour and Exit VR',
+   'RIGHT B BUTTON   Return to website'
+  ];
+  let y=142;
+  for(const line of lines){y=vrTourLine(line,40,y,835,29);y+=15}
+  vrTourLine('Select START TOUR to visit the exhibition stops, or EXPLORE to walk freely.',40,495,825,27,'#c9d4c7');
+  vrTourButton('START TOUR',26,588,408,82,'start');
+  vrTourButton('EXPLORE',466,588,408,82,'minimize');
+ }else{
+  const stops=window.poornaExhibition?.getStops?.()||[];
+  const stop=stops[vrTourIndex];
+  vrTourCtx.font='bold 32px Arial';vrTourCtx.fillStyle='#dfc395';
+  vrTourCtx.fillText(stops.length?'STOP '+(Math.max(0,vrTourIndex)+1)+' / '+stops.length:'NO TOUR STOPS',40,153);
+  if(stop){
+   vrTourLine(stop.title||'Market stop',40,192,820,37,'#fff6e5');
+   vrTourLine(stop.note||stop.desc||'Explore this part of the market.',40,290,820,29);
+  }else{
+   vrTourLine('Choose NEXT to move to the first architectural tour stop.',40,228,820,32);
+  }
+  if(vrTourMessage)vrTourLine(vrTourMessage,40,515,820,23,'#e8c697');
+  vrTourButton('PREVIOUS',24,590,260,80,'previous',vrTourIndex>0);
+  vrTourButton(vrTourIndex>=stops.length-1?'RESTART':'NEXT STOP',302,590,300,80,'next',stops.length>0);
+  vrTourButton('HIDE',622,590,254,80,'minimize');
+ }
+ vrTourTexture.needsUpdate=true;
+}
+function vrTourStart(){
+ vrTourPage='intro';vrTourIndex=-1;vrTourMessage='';
+ vrTourPanel.visible=true;vrTourTab.visible=false;
+ vrTourRedraw();
+}
+function vrTourEnd(){
+ vrTourPanel.visible=false;vrTourTab.visible=false;
+ vrTourMessage='';
+}
+function vrTourVisit(index){
+ const stops=window.poornaExhibition?.getStops?.()||[];
+ if(!stops.length){vrTourMessage='No tour stops available on this device.';vrTourRedraw();return}
+ if(!collisionReady){vrTourMessage='Walk surfaces are still loading. Try NEXT again.';vrTourRedraw();return}
+ const next=(index+stops.length)%stops.length;
+ const stop=stops[next],box=modelBounds;
+ const size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3());
+ const position=stop.pose?.position;
+ let x=position?.[0],z=position?.[2];
+ if(!Number.isFinite(x)||!Number.isFinite(z)){
+  x=center.x+(stop.anchor?.[0]||0)*size.x;
+  z=center.z+(stop.anchor?.[2]||0)*size.z;
+ }
+ x=THREE.MathUtils.clamp(x,box.min.x-8,box.max.x+8);
+ z=THREE.MathUtils.clamp(z,box.min.z-8,box.max.z+8);
+ // Prefer a reachable lower-level floor close to the exhibition marker.
+ const probeFeet=box.min.y+.9;
+ let foot=floorAt(x,z,probeFeet,1.3,3.5);
+ if(foot===null){
+  // Move the candidate a little to find a nearby walkable triangle.
+  for(const [ox,oz] of [[1,0],[-1,0],[0,1],[0,-1],[2,0],[-2,0],[0,2],[0,-2]]){
+   const yy=floorAt(x+ox,z+oz,probeFeet,1.3,3.5);
+   if(yy!==null){x+=ox;z+=oz;foot=yy;break}
+  }
+ }
+ if(foot===null){
+  vrTourMessage='No walkable surface found here; previous position kept.';
+  vrTourRedraw();return;
+ }
+ // Moving the VR rig, rather than the camera, preserves room-scale
+ // headset tracking and the tested Quest locomotion/collision pipeline.
+ rig.updateWorldMatrix(true,false);
+ xrHeadA.copy(xrTrackedLocal).applyMatrix4(rig.matrixWorld);
+ rig.position.x+=x-xrHeadA.x;rig.position.z+=z-xrHeadA.z;
+ rig.position.y=foot;
+ vrWalkState.velocity=0;
+ vrTourIndex=next;
+ vrTourMessage='Moved to this stop. Use the joystick to explore.';
+ vrTourRedraw();
+}
+function vrTourAction(action){
+ if(action==='minimize'){
+  vrTourPanel.visible=false;vrTourTab.visible=true;return;
+ }
+ if(action==='start'){
+  vrTourPage='tour';vrTourIndex=-1;vrTourVisit(0);return;
+ }
+ if(action==='next'){vrTourVisit(vrTourIndex+1);return}
+ if(action==='previous'){vrTourVisit(vrTourIndex-1);return}
+}
+function selectVRTour(controller){
+ if(!renderer.xr.isPresenting)return false;
+ controller.updateMatrixWorld(true);
+ xrBackRotation.identity().extractRotation(controller.matrixWorld);
+ vrTourRaycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+ vrTourRaycaster.ray.direction.copy(xrBackForward).applyMatrix4(xrBackRotation).normalize();
+ vrTourRaycaster.near=0;vrTourRaycaster.far=4;
+ if(vrTourTab.visible&&vrTourRaycaster.intersectObject(vrTourTab,false).length){
+  vrTourTab.visible=false;vrTourPanel.visible=true;
+  vrTourRedraw();return true;
+ }
+ if(!vrTourPanel.visible)return false;
+ const hit=vrTourRaycaster.intersectObject(vrTourPanel,false)[0];
+ if(!hit?.uv)return false;
+ const px=hit.uv.x*900,py=(1-hit.uv.y)*700;
+ for(const button of vrTourButtons){
+  if(px>=button.x&&px<=button.x+button.w&&py>=button.y&&py<=button.y+button.h){
+   vrTourAction(button.action);return true;
+  }
+ }
+ // Clicking the panel outside a button should not teleport behind it.
+ return true;
+}
+
 for(let i=0;i<2;i++){
  const controller=renderer.xr.getController(i);rig.add(controller);
  // Diagnostic HUD is attached to the scene and follows the headset.
  const ray=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3(0,0,-1)]),new THREE.LineBasicMaterial({color:0xdac28e}));ray.scale.z=8;controller.add(ray);
- controller.addEventListener('selectstart',()=>{if(renderer.xr.isPresenting&&!selectVRBack(controller))moveToController(controller)})
+ controller.addEventListener('selectstart',()=>{if(renderer.xr.isPresenting&&!selectVRBack(controller)&&!selectVRTour(controller))moveToController(controller)})
 }
-renderer.xr.addEventListener('sessionstart',()=>{setRenderingProfile('vr');xrBackButton.visible=true;xrBackButtonHeld=false;xrTurnVelocity=0;vrWalkState.velocity=0;xrPoseMissing=0;xrSpawnPending=true;rig.rotation.y=0;buildWalkPhysics().then(ok=>{if(ok&&renderer.xr.isPresenting)status('Quest 3 capsule collision ready: walk on ramps & floors; hold right stick to turn');});window.poornaNavigation?.vrStart();window.poornaExhibition?.stop();rig.position.copy(entranceSpawn().position);status('Quest 3: left joystick walks · right joystick smooth turning · trigger teleports.');tag.textContent='IMMERSIVE VR ACTIVE'});
-renderer.xr.addEventListener('sessionend',()=>{setRenderingProfile(isPortableDevice?'mobile':'desktop');xrBackButton.visible=false;xrBackButtonHeld=false;window.poornaNavigation?.vrEnd();rig.position.set(0,0,0);tag.textContent=modelLoaded?'ACTUAL MARKET MODEL LOADED':'MODEL READY TO LOAD';setMode('orbit');status('Exited immersive VR mode')});
+renderer.xr.addEventListener('sessionstart',()=>{setRenderingProfile('vr');vrTourStart();xrBackButton.visible=true;xrBackButtonHeld=false;xrTurnVelocity=0;vrWalkState.velocity=0;xrPoseMissing=0;xrSpawnPending=true;rig.rotation.y=0;buildWalkPhysics().then(ok=>{if(ok&&renderer.xr.isPresenting)status('Quest 3 capsule collision ready: walk on ramps & floors; hold right stick to turn');});window.poornaNavigation?.vrStart();window.poornaExhibition?.stop();rig.position.copy(entranceSpawn().position);status('Quest 3: left joystick walks · right joystick smooth turning · trigger teleports.');tag.textContent='IMMERSIVE VR ACTIVE'});
+renderer.xr.addEventListener('sessionend',()=>{setRenderingProfile(isPortableDevice?'mobile':'desktop');vrTourEnd();xrBackButton.visible=false;xrBackButtonHeld=false;window.poornaNavigation?.vrEnd();rig.position.set(0,0,0);tag.textContent=modelLoaded?'ACTUAL MARKET MODEL LOADED':'MODEL READY TO LOAD';setMode('orbit');status('Exited immersive VR mode')});
 $('vrEnterBtn').addEventListener('click',async()=>{
  if(!modelLoaded){notice('Load the actual market model before entering VR.');return}
  if(!window.isSecureContext){notice('Immersive VR requires HTTPS. Deploy the site to a secure URL.');return}
