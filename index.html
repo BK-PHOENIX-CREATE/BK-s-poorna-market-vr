@@ -12,7 +12,7 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@0,500;0,600;1,500;1,600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/styles.css" />
   <script type="importmap">
-  {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"}}
+  {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/","three-mesh-bvh":"https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.9.18/build/index.module.js"}}
   </script>
   <script src="/main.js" defer></script>
   <script type="module" src="/viewer.js"></script>
@@ -75,9 +75,9 @@
           <div class="viewer-annotation" id="viewerAnnotation"><span class="live-indicator"></span> <span id="viewModeName">PERSPECTIVE / ORBIT</span></div>
           <div class="compass" aria-hidden="true">N<br><span>↑</span></div>
           <div class="viewport-actions"><button id="resetViewBtn" title="Reset camera">⟲ <span>Reset view</span></button><button id="helpBtn" title="Viewer controls">? <span>Controls</span></button></div>
-          <div class="viewer-help" id="viewerHelp" hidden><strong>DESKTOP CONTROLS</strong><p>Orbit: drag · Zoom: scroll</p><p>Walk: W A S D move · Space / E ascend · C / Q descend</p><p>Look: click inside viewer and move mouse</p><p>Shift: move faster · Esc: release cursor</p><p>Orbit: right-drag to pan, wheel to zoom</p><p>VR: use headset browser and controllers</p><button id="closeHelpBtn">Close ×</button></div>
+          <div class="viewer-help" id="viewerHelp" hidden><strong>DESKTOP CONTROLS</strong><p>Orbit: drag · Zoom: scroll</p><p><b>Sky:</b> WASD fly · Space/E rise · C/Q descend</p><p><b>Walk:</b> WASD follow actual floors and ramps · gravity and wall checks</p><p>Look: click viewer and move mouse · Shift: faster · Esc: release cursor</p><p>Orbit: right-drag to pan, wheel to zoom</p><p>VR: use headset browser and controllers</p><button id="closeHelpBtn">Close ×</button></div>
         </div>
-        <div class="viewer-toolbar"><div class="mode-tabs" role="group" aria-label="View mode"><button class="mode-tab selected" data-mode="orbit">◉ <span>Orbit</span></button><button class="mode-tab" data-mode="walk">♙ <span>Walkthrough</span></button><button class="mode-tab" data-mode="plan">▦ <span>Plan view</span></button></div><div class="viewer-ctas"><button id="fileButton" class="file-select">＋ Upload GLB</button><input id="modelFile" type="file" accept=".glb,model/gltf-binary" hidden /><button id="vrEnterBtn" class="vr-button">◫ &nbsp; Enter VR <span>↗</span></button></div></div>
+        <div class="viewer-toolbar"><div class="mode-tabs" role="group" aria-label="View mode"><button class="mode-tab selected" data-mode="orbit">◉ <span>Orbit</span></button><button class="mode-tab" data-mode="sky">☁ <span>Sky / Fly</span></button><button class="mode-tab" data-mode="walk">♙ <span>Walk</span></button><button class="mode-tab" data-mode="plan">▦ <span>Plan view</span></button></div><div class="viewer-ctas"><button id="fileButton" class="file-select">＋ Upload GLB</button><input id="modelFile" type="file" accept=".glb,model/gltf-binary" hidden /><button id="vrEnterBtn" class="vr-button">◫ &nbsp; Enter VR <span>↗</span></button></div></div>
         <div class="viewer-footer"><span id="viewerStatus" role="status">Your architectural model is ready to load.</span><span>DESKTOP / WEBXR · REAL MODEL</span></div>
       </div>
       <div class="explore-features"><div><span class="features-num">01</span><h3>Observe the form</h3><p>Orbit around the proposal and inspect the overall architectural composition.</p></div><div><span class="features-num">02</span><h3>Experience the scale</h3><p>Switch to a first-person view and navigate with mouse and keyboard.</p></div><div><span class="features-num">03</span><h3>Enter another dimension</h3><p>Experience immersive VR in a compatible headset browser. Performance depends on device capabilities.</p></div></div>
