@@ -8,8 +8,11 @@ window.addEventListener('scroll',()=>{$('scrollBar').style.width=`${100*window.s
 const filterButtons=document.querySelectorAll('.filter'),galleryCards=document.querySelectorAll('.gallery-card');
 filterButtons.forEach(btn=>btn.addEventListener('click',()=>{filterButtons.forEach(b=>b.classList.toggle('active',b===btn));const group=btn.dataset.filter;galleryCards.forEach(card=>{card.hidden=group!=='all'&&card.dataset.group!==group})}));
 const lightbox=$('lightbox'),lightboxImg=$('lightboxImg');let previousFocus=null;
-function closeLightbox(){lightbox.hidden=true;document.body.classList.remove('modal-open');lightboxImg.removeAttribute('src');previousFocus?.focus()}
-galleryCards.forEach(card=>card.addEventListener('click',()=>{previousFocus=document.activeElement;lightboxImg.src=card.dataset.src;lightboxImg.alt=card.dataset.title;$('lightboxTitle').textContent=card.dataset.title;lightbox.hidden=false;document.body.classList.add('modal-open');$('lightboxClose').focus()}));
+let drawingZoom=false;
+function resetDrawingZoom(){drawingZoom=false;lightboxImg.classList.remove('drawing-zoomed');}
+function closeLightbox(){resetDrawingZoom();lightbox.hidden=true;document.body.classList.remove('modal-open');lightboxImg.removeAttribute('src');previousFocus?.focus()}
+galleryCards.forEach(card=>card.addEventListener('click',()=>{previousFocus=document.activeElement;resetDrawingZoom();lightboxImg.src=card.dataset.src;lightboxImg.alt=card.dataset.title;$('lightboxTitle').textContent=card.dataset.title;lightbox.hidden=false;document.body.classList.add('modal-open');$('lightboxClose').focus()}));
+lightboxImg.addEventListener('click',()=>{drawingZoom=!drawingZoom;lightboxImg.classList.toggle('drawing-zoomed',drawingZoom)});
 $('lightboxClose').addEventListener('click',closeLightbox);lightbox.addEventListener('click',e=>{if(e.target===lightbox||e.target.classList.contains('lightbox-body'))closeLightbox()});document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!lightbox.hidden)closeLightbox()});
 const observe=new IntersectionObserver(entries=>{entries.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in-view');observe.unobserve(e.target)}})},{threshold:.08,rootMargin:'0px 0px -35px 0px'});
 document.querySelectorAll('.intro-grid,.feature-media,.experience-heading,.drawings-top,.gallery-card,.story-grid,.explore-features>div').forEach(e=>{e.classList.add('reveal');observe.observe(e)});
