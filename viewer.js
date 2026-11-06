@@ -80,6 +80,7 @@ document.querySelectorAll('.mode-tab').forEach(btn=>btn.addEventListener('click'
  }
  setMode(next);
 }));
+window.poornaViewer={THREE,scene,camera,renderer,orbit,sun,opposite,ambient,ground,getBounds:()=>modelBounds.clone(),isLoaded:()=>modelLoaded,setMode,status,notice};
 function resize(){const w=Math.max(1,mount.clientWidth),h=Math.max(1,mount.clientHeight);renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix()}
 const ro=new ResizeObserver(resize);ro.observe(mount);resize();makeCamera('orbit');
 const io=new IntersectionObserver(e=>{visible=e[0]?.isIntersecting??true},{threshold:.005});io.observe(mount);
@@ -186,6 +187,7 @@ renderer.setAnimationLoop(()=>{
      }
    }else orbit.update();
  }
+ window.poornaExhibition?.tick(delta);
  renderer.render(scene,camera);
 });
 mount.addEventListener('click',()=>{if((currentMode==='walk'||currentMode==='sky')&&!renderer.xr.isPresenting&&document.pointerLockElement!==renderer.domElement){renderer.domElement.requestPointerLock?.().catch(()=>{})}});
@@ -211,7 +213,7 @@ function load(file){
   if(modelSize.x>2000||modelSize.z>2000){const scale=95/Math.max(modelSize.x,modelSize.z);model.scale.setScalar(scale);modelBounds.setFromObject(model)}
   scene.add(model);
   modelLoaded=true;isLoading=false;tag.textContent='ACTUAL MARKET MODEL LOADED';splash.hidden=true;progress.hidden=true;grid.visible=false;ground.visible=true;
-  setMode('orbit');status(`Loaded successfully · ${meshCount} draw groups · Orbit / Sky / Walk / Plan / VR available`);
+  setMode('orbit');window.poornaExhibition?.modelReady();status(`Loaded successfully · ${meshCount} draw groups · Orbit / Sky / Walk / Plan / VR available`);
   if(isBlob)URL.revokeObjectURL(url);
  },evt=>{if(evt.lengthComputable){const pct=Math.min(98,Math.round(evt.loaded/evt.total*100));bar.style.width=pct+'%';progText.textContent=`Downloading 3D architecture · ${pct}%`;
  }else{progText.textContent=`Downloading model · ${(evt.loaded/1024/1024).toFixed(0)} MB received`}
@@ -244,7 +246,7 @@ for(let i=0;i<2;i++){
  const ray=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3(0,0,-1)]),new THREE.LineBasicMaterial({color:0xdac28e}));ray.scale.z=8;controller.add(ray);
  controller.addEventListener('selectstart',()=>{if(renderer.xr.isPresenting)moveToController(controller)})
 }
-renderer.xr.addEventListener('sessionstart',()=>{rig.position.set(0,0,modelBounds.max.z+4);status('Immersive VR active. Point at the floor and press controller trigger to teleport.');tag.textContent='IMMERSIVE VR ACTIVE'});
+renderer.xr.addEventListener('sessionstart',()=>{window.poornaExhibition?.stop();rig.position.set(0,0,modelBounds.max.z+4);status('Immersive VR active. Point at the floor and press controller trigger to teleport.');tag.textContent='IMMERSIVE VR ACTIVE'});
 renderer.xr.addEventListener('sessionend',()=>{rig.position.set(0,0,0);tag.textContent=modelLoaded?'ACTUAL MARKET MODEL LOADED':'MODEL READY TO LOAD';setMode('orbit');status('Exited immersive VR mode')});
 $('vrEnterBtn').addEventListener('click',async()=>{
  if(!modelLoaded){notice('Load the actual market model before entering VR.');return}
