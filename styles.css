@@ -42,3 +42,13 @@
 .ex-info p{font:12px/1.75 var(--sans);color:#d0dacf;margin:0}
 @media(max-width:850px){.ex-tour{align-items:flex-start;flex-direction:column}.ex-tour-actions{align-self:flex-end}.ex-controls-top label{width:100%}.ex-controls-top select{flex:1;max-width:none}#exToggleHotspots{margin-left:0}}
 @media(prefers-reduced-motion:reduce){.ex-hotspot{transition:none}}
+
+/* Jury minimap and mobile preview */
+.poorna-minimap{position:absolute;left:14px;bottom:15px;z-index:9;width:184px;max-width:40%;background:#17251e;border:1px solid #9fb19d;color:#f6efdf;box-shadow:0 12px 30px #0009;overflow:hidden;pointer-events:auto}
+.minimap-title,.minimap-foot{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:7px 9px;font:700 9px var(--sans);letter-spacing:.05em;background:#203328}
+.minimap-title button{background:#314638;border:1px solid #798d76;color:#fff;min-width:21px;min-height:21px}
+.poorna-minimap canvas{display:block;width:100%;height:auto;aspect-ratio:1}
+.poorna-minimap canvas.mini-collapsed,.poorna-minimap.minimap-vr{display:none}
+.minimap-foot{font-size:8px;color:#dec699}
+#mobileMotionBtn[aria-pressed="true"],#mobileStereoBtn[aria-pressed="true"]{background:#d7bc8e!important;color:#17251e!important}
+@media(max-width:700px){.poorna-minimap{left:7px;bottom:7px;width:132px;max-width:38%}.minimap-title,.minimap-foot{font-size:7px;padding:5px}.viewer-ctas{flex-wrap:wrap}}
