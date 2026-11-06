@@ -322,10 +322,9 @@ scene.add(xrInfoPanel);
 const xrHudOffset=new THREE.Vector3(-.25,-.19,-.82),xrHudPosition=new THREE.Vector3(),xrHudRotation=new THREE.Quaternion();
 function positionXRDiagnosticHUD(){
  if(!renderer.xr.isPresenting||!xrInfoPanel.visible)return;
- const xrCamera=renderer.xr.getCamera(camera);
- const head=xrCamera.cameras?.[0]||xrCamera;
- head.getWorldPosition(xrHudPosition);
- head.getWorldQuaternion(xrHudRotation);
+ rig.updateWorldMatrix(true,false);
+ xrHudPosition.copy(xrTrackedLocal).applyMatrix4(rig.matrixWorld);
+ rig.getWorldQuaternion(xrHudRotation).multiply(xrTrackedOrientation);
  xrInfoPanel.position.copy(xrHudOffset).applyQuaternion(xrHudRotation).add(xrHudPosition);
  xrInfoPanel.quaternion.copy(xrHudRotation);
 }
@@ -480,8 +479,9 @@ function moveToController(controller){
    if(groundHits.length)target=groundHits[0].point;
  }
  if(!target)return;
- const head=renderer.xr.getCamera(camera);
- head.getWorldPosition(xrHeadA);
+ // Teleport uses the same Quest tracking coordinate system as joystick walking.
+ rig.updateWorldMatrix(true,false);
+ xrHeadA.copy(xrTrackedLocal).applyMatrix4(rig.matrixWorld);
  rig.position.x+=target.x-xrHeadA.x;
  rig.position.z+=target.z-xrHeadA.z;
  const floor=floorAt(target.x,target.z,target.y,STEP,1.8);
