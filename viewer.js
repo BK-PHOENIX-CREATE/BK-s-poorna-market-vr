@@ -317,53 +317,107 @@ function resolveXRCapsule(x,z,footY,eyeY){
  }
  return {x:px,z:pz,y:py,grounded};
 }
+
+const xrProbe=new THREE.Raycaster(),xrSampleNormal=new THREE.Vector3();
+const xrProbeDir=new THREE.Vector3(),xrFloorSamples=[[0,0],[.22,0],[-.22,0],[0,.22],[0,-.22]];
+let xrLastSupport=null;
+function xrFindSupport(x,z,feet,maxRise=1.05,maxDrop=1.1){
+ if(!collisionReady)return null;
+ // A real floor or ramp can start 0.6m above the exterior zero plane.
+ // Query 5 samples across the user's body so one missing triangle
+ // or narrow face cannot make the headset fall through the surface.
+ const candidates=[];
+ for(const [ox,oz] of xrFloorSamples){
+  xrProbe.set(new THREE.Vector3(x+ox,feet+maxRise+.07,z+oz),DOWN);
+  xrProbe.near=0;xrProbe.far=maxRise+maxDrop+.07;xrProbe.firstHitOnly=false;
+  for(const hit of xrProbe.intersectObjects(collisionMeshes,false)){
+   if(!hit.face)continue;
+   xrSampleNormal.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
+   if(Math.abs(xrSampleNormal.y)<.47)continue;
+   if(hit.point.y>feet+maxRise+.01||hit.point.y<feet-maxDrop-.01)continue;
+   candidates.push(hit.point.y);break;
+  }
+ }
+ if(!candidates.length)return null;
+ // Prefer the upper walkable surface when a thin ramp/floor overlaps
+ // another surface in projection; cap sudden elevation changes below.
+ return Math.max(...candidates);
+}
+function xrBodyBlocked(headX,headZ,feet,eyeHeight,dx,dz){
+ if(!collisionReady)return false;
+ const distance=Math.hypot(dx,dz);if(distance<.00001)return false;
+ xrProbeDir.set(dx/distance,0,dz/distance);
+ const offsets=[[-.21,0],[.21,0],[0,-.21],[0,.21],[0,0]];
+ const bodyY=[.28,Math.min(.90,eyeHeight-.25),Math.min(1.35,eyeHeight-.12)];
+ for(const [ox,oz] of offsets){
+  for(const height of bodyY){
+   xrProbe.set(new THREE.Vector3(headX+ox,feet+height,headZ+oz),xrProbeDir);
+   xrProbe.near=0;xrProbe.far=distance+.055;xrProbe.firstHitOnly=false;
+   const hits=xrProbe.intersectObjects(collisionMeshes,false);
+   for(const hit of hits){
+    if(!hit.face)continue;
+    xrSampleNormal.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
+    // A near-vertical surface is a wall. For inclined geometry, the
+    // ground probe decides whether it is a walkable rise or obstruction.
+    if(Math.abs(xrSampleNormal.y)<.44)return true;
+   }
+  }
+ }
+ return false;
+}
 function xrGroundFollow(head,dx,dz,dt){
  if(!collisionReady)return;
- const oldFoot=rig.position.y;
- // XR local-floor tracking gives the real headset eye height. The body
- // collider is anchored to the tracked head's X/Z, not to the VR rig origin.
- const eyeHeight=THREE.MathUtils.clamp(head.y-oldFoot,.95,2.1);
- const steps=Math.max(1,Math.ceil(Math.hypot(dx,dz)/.10));
- let trackedX=head.x,trackedZ=head.z,foot=oldFoot,grounded=false;
+ const baseFoot=rig.position.y;
+ const eyeHeight=THREE.MathUtils.clamp(head.y-baseFoot,1.0,2.1);
+ const steps=Math.max(1,Math.ceil(Math.hypot(dx,dz)/.055));
+ let positionX=head.x,positionZ=head.z,feet=baseFoot;
+ let supported=false;
  for(let i=0;i<steps;i++){
-   const desiredX=trackedX+dx/steps,desiredZ=trackedZ+dz/steps;
-   const resolved=resolveXRCapsule(desiredX,desiredZ,foot,foot+eyeHeight);
-   // Never use a wall collision to drop the headset beneath the slab.
-   const found=floorAt(resolved.x,resolved.z,foot,.65,1.2);
-   let proposedY=resolved.y;
-   if(found!==null&&found>=foot-.40&&found<=foot+.65){
-     proposedY=Math.max(proposedY,found+.007);
-     grounded=true;
-   }
-   rig.position.x+=resolved.x-trackedX;
-   rig.position.z+=resolved.z-trackedZ;
-   rig.position.y+=proposedY-foot;
-   foot=proposedY;
-   trackedX=resolved.x;trackedZ=resolved.z;
-   if(resolved.grounded)grounded=true;
+  const stepX=dx/steps,stepZ=dz/steps;
+  let tx=positionX+stepX,tz=positionZ+stepZ;
+  if(xrBodyBlocked(positionX,positionZ,feet,eyeHeight,stepX,stepZ)){
+   // Sliding independently along X/Z gives smooth navigation at corners
+   // without passing through walls.
+   tx=xrBodyBlocked(positionX,positionZ,feet,eyeHeight,stepX,0)?positionX:positionX+stepX;
+   tz=xrBodyBlocked(tx,positionZ,feet,eyeHeight,0,stepZ)?positionZ:positionZ+stepZ;
+  }
+  let nextFloor=xrFindSupport(tx,tz,feet,1.05,1.0);
+  if(nextFloor!==null&&nextFloor>feet+.82){
+   // Reject vertical jumps (walls), but allow 0.6m ground-level floor.
+   tx=positionX;tz=positionZ;
+   nextFloor=xrFindSupport(tx,tz,feet,1.05,1.0);
+  }
+  let nextY=feet;
+  if(nextFloor!==null&&nextFloor>=feet-.42){
+   // Follow ramp heights immediately, without slowly sinking into slab.
+   nextY=nextFloor+.012;
+   supported=true;xrFallVelocity=0;
+  }
+  const resolved=resolveXRCapsule(tx,tz,nextY,nextY+eyeHeight);
+  // Keep the capsule above the support surface after wall correction.
+  if(nextFloor!==null)resolved.y=Math.max(resolved.y,nextFloor+.012);
+  rig.position.x+=resolved.x-positionX;
+  rig.position.z+=resolved.z-positionZ;
+  rig.position.y+=resolved.y-feet;
+  positionX=resolved.x;positionZ=resolved.z;feet=resolved.y;
  }
- // Gravity is applied even when stationary and the capsule resolves its
- // penetration against ground triangles at the end of each step.
- const support=floorAt(trackedX,trackedZ,foot,.60,1.3);
- if(support!==null&&support>=foot-.30&&support<=foot+.60){
-   rig.position.y=support+.007;
-   xrFallVelocity=0;
-   xrGrounded=true;
- }else if(!grounded){
-   xrFallVelocity=Math.min(13,xrFallVelocity+14*dt);
-   const dropped=resolveXRCapsule(trackedX,trackedZ,rig.position.y-xrFallVelocity*dt,rig.position.y+eyeHeight-xrFallVelocity*dt);
-   rig.position.x+=dropped.x-trackedX;rig.position.z+=dropped.z-trackedZ;
-   rig.position.y=dropped.y;
-   if(dropped.grounded)xrFallVelocity=0;
-   xrGrounded=dropped.grounded;
- }else{
-   xrFallVelocity=0;xrGrounded=true;
- }
- const box=modelBounds.clone().expandByScalar(13);
- rig.position.x=THREE.MathUtils.clamp(rig.position.x,box.min.x,box.max.x);
- rig.position.z=THREE.MathUtils.clamp(rig.position.z,box.min.z,box.max.z);
- if(rig.position.y<modelBounds.min.y-1){rig.position.y=modelBounds.min.y-.08;xrFallVelocity=0}
+ const support=xrFindSupport(positionX,positionZ,feet,.7,.85);
+ if(support!==null&&support>=feet-.40){
+  rig.position.y=Math.max(support+.012,feet-.04);
+  xrFallVelocity=0;supported=true;xrLastSupport=support;
+ }else if(!supported){
+  xrFallVelocity=Math.min(9,xrFallVelocity+12*dt);
+  const falling=resolveXRCapsule(positionX,positionZ,feet-xrFallVelocity*dt,feet+eyeHeight-xrFallVelocity*dt);
+  rig.position.x+=falling.x-positionX;rig.position.z+=falling.z-positionZ;
+  rig.position.y=falling.y;
+  if(falling.grounded)xrFallVelocity=0;
+ }else xrFallVelocity=0;
+ const limits=modelBounds.clone().expandByScalar(12);
+ rig.position.x=THREE.MathUtils.clamp(rig.position.x,limits.min.x,limits.max.x);
+ rig.position.z=THREE.MathUtils.clamp(rig.position.z,limits.min.z,limits.max.z);
+ if(rig.position.y<modelBounds.min.y-.12){rig.position.y=modelBounds.min.y-.08;xrFallVelocity=0}
 }
+
 function xrSmoothTurn(head,angle){
  if(Math.abs(angle)<.000001)return;
  // Rotate the rig around the actual headset position, so a physically
@@ -437,8 +491,8 @@ function moveToController(controller){
  head.getWorldPosition(xrHeadA);
  rig.position.x+=target.x-xrHeadA.x;
  rig.position.z+=target.z-xrHeadA.z;
- const floor=floorAt(target.x,target.z,target.y,STEP,1.8);
- rig.position.y=floor??target.y;
+ const floor=xrFindSupport(target.x,target.z,target.y,.65,1.8);
+ rig.position.y=(floor??target.y)+.012;
  xrFallVelocity=0;
 }
 for(let i=0;i<2;i++){
@@ -446,7 +500,7 @@ for(let i=0;i<2;i++){
  const ray=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3(0,0,-1)]),new THREE.LineBasicMaterial({color:0xdac28e}));ray.scale.z=8;controller.add(ray);
  controller.addEventListener('selectstart',()=>{if(renderer.xr.isPresenting)moveToController(controller)})
 }
-renderer.xr.addEventListener('sessionstart',()=>{xrTurnVelocity=0;xrFallVelocity=0;rig.rotation.y=0;buildWalkPhysics().then(ok=>{if(ok&&renderer.xr.isPresenting)status('Quest 3 capsule collision ready: walk on ramps & floors; hold right stick to turn');});window.poornaNavigation?.vrStart();window.poornaExhibition?.stop();rig.position.set(0,0,modelBounds.max.z+4);status('Quest 3: left joystick walks · right joystick smooth turning · trigger teleports.');tag.textContent='IMMERSIVE VR ACTIVE'});
+renderer.xr.addEventListener('sessionstart',()=>{xrTurnVelocity=0;xrFallVelocity=0;rig.rotation.y=0;buildWalkPhysics().then(ok=>{if(ok&&renderer.xr.isPresenting)status('Quest 3 capsule collision ready: walk on ramps & floors; hold right stick to turn');});window.poornaNavigation?.vrStart();window.poornaExhibition?.stop();rig.position.set(0,modelBounds.min.y,modelBounds.max.z+4);status('Quest 3: left joystick walks · right joystick smooth turning · trigger teleports.');tag.textContent='IMMERSIVE VR ACTIVE'});
 renderer.xr.addEventListener('sessionend',()=>{window.poornaNavigation?.vrEnd();rig.position.set(0,0,0);tag.textContent=modelLoaded?'ACTUAL MARKET MODEL LOADED':'MODEL READY TO LOAD';setMode('orbit');status('Exited immersive VR mode')});
 $('vrEnterBtn').addEventListener('click',async()=>{
  if(!modelLoaded){notice('Load the actual market model before entering VR.');return}
