@@ -193,7 +193,7 @@ function moveWalk(dx,dz,dt){
 }
 
 const clock=new THREE.Clock();
-renderer.setAnimationLoop(()=>{
+renderer.setAnimationLoop((time,xrFrame)=>{
  const delta=Math.min(clock.getDelta(),.05);
  if(!visible&&!renderer.xr.isPresenting)return;
  if(!renderer.xr.isPresenting){
@@ -218,7 +218,7 @@ renderer.setAnimationLoop(()=>{
      }
    }else orbit.update();
  }
- if(renderer.xr.isPresenting){try{updateXRLocomotion(delta)}catch(error){if(!vrReport.error||vrReport.frames%120===0)recordXRFailure(error)}}
+ if(renderer.xr.isPresenting){try{updateXRLocomotion(delta,xrFrame)}catch(error){if(!vrReport.error||vrReport.frames%120===0)recordXRFailure(error)}}
  window.poornaExhibition?.tick(delta);
  window.poornaNavigation?.tick(delta);
  if(!window.poornaNavigation?.renderStereo?.())renderer.render(scene,camera);
@@ -283,6 +283,8 @@ function publishVRReport(){
   'Ground Y: '+(report.groundY===null?'NONE':report.groundY.toFixed(2)),
   'Player Y: '+(report.playerY===null?'NONE':report.playerY.toFixed(2)),
   'Position X/Z: '+(report.position?report.position.map(n=>n.toFixed(2)).join(' / '):'NONE'),
+  'Rig X/Z: '+(report.rigPosition?report.rigPosition.map(n=>n.toFixed(2)).join(' / '):'NONE'),
+  'Left stick X/Y: '+(report.leftStick?report.leftStick.map(n=>n.toFixed(2)).join(' / '):'NONE'),
   'Updated frames: '+report.frames,
   report.error?'Error: '+report.error:'Error: none'
  ].join('\n');
@@ -345,7 +347,7 @@ function updateXRDiagnostics(dt,x,z,feet){
   }
  }
  xrLastGroundHit=hitY;
- vrReport={state:collisionReady?'PHYSICS READY':'PHYSICS NOT READY',indexedMeshes:collisionMeshes.length,floorRayHits:hitCount,groundY:hitY,playerY:feet,position:[x,z],frames:vrReport.frames+1,error:collisionFailure||vrReport.error,updatedAt:new Date().toISOString()};
+ vrReport={state:collisionReady?'PHYSICS READY':'PHYSICS NOT READY',indexedMeshes:collisionMeshes.length,floorRayHits:hitCount,groundY:hitY,playerY:feet,position:[x,z],rigPosition:[rig.position.x,rig.position.z],leftStick:vrReport.leftStick,frames:vrReport.frames+1,error:collisionFailure||vrReport.error,updatedAt:new Date().toISOString()};
  publishVRReport();
  xrInfoCtx.fillStyle='#14251b';xrInfoCtx.fillRect(0,0,512,256);
  xrInfoCtx.fillStyle=collisionReady?'#9ee0af':'#f8bd8e';
@@ -364,6 +366,25 @@ const xrHeadA=new THREE.Vector3(),xrHeadB=new THREE.Vector3(),xrUp=new THREE.Vec
 const xrWallNormal=new THREE.Vector3();
 let xrTurnVelocity=0;
 const XR_TURN_RATE=THREE.MathUtils.degToRad(75),XR_TURN_RESPONSE=11;
+// WebXR pose is measured in the session's local-floor reference space.
+// Apply the rig transform explicitly. XR stereo subcameras can report
+// reference-space coordinates if their world matrices have not updated yet.
+const xrTrackedLocal=new THREE.Vector3(),xrTrackedWorld=new THREE.Vector3();
+const xrTrackedOrientation=new THREE.Quaternion(),xrRigOrientation=new THREE.Quaternion();
+let xrPoseMissing=0;
+function getTrackedHeadPose(frame){
+ const space=renderer.xr.getReferenceSpace();
+ const pose=frame&&space?frame.getViewerPose(space):null;
+ if(!pose)return null;
+ const t=pose.transform,p=t.position,o=t.orientation;
+ xrTrackedLocal.set(p.x,p.y,p.z);
+ xrTrackedOrientation.set(o.x,o.y,o.z,o.w);
+ rig.updateWorldMatrix(true,false);
+ xrTrackedWorld.copy(xrTrackedLocal).applyMatrix4(rig.matrixWorld);
+ rig.getWorldQuaternion(xrRigOrientation);
+ xrQ.copy(xrRigOrientation).multiply(xrTrackedOrientation);
+ return xrTrackedWorld;
+}
 function getXRStick(source){
  const a=source?.gamepad?.axes||[];
  const x=a.length>=4?(a[2]||0):(a[0]||0),y=a.length>=4?(a[3]||0):(a[1]||0);
@@ -384,48 +405,53 @@ function xrGroundFollow(head,dx,dz,dt){
   x=result.x;z=result.z;feet=result.feet;
  }
 }
-function xrSmoothTurn(head,angle){
+function xrSmoothTurn(head,angle,xrFrame){
  if(Math.abs(angle)<.000001)return;
- // Rotate the rig around the actual headset position, so a physically
- // offset / room-scale user doesn't orbit around an invisible world origin.
- head.getWorldPosition(xrHeadA);
+ const before=getTrackedHeadPose(xrFrame);
+ if(!before)return;
+ xrHeadA.copy(before);
  rig.rotation.y+=angle;
- rig.updateMatrixWorld(true);
- head.getWorldPosition(xrHeadB);
- rig.position.x+=xrHeadA.x-xrHeadB.x;
- rig.position.z+=xrHeadA.z-xrHeadB.z;
+ const after=getTrackedHeadPose(xrFrame);
+ if(!after)return;
+ rig.position.x+=xrHeadA.x-after.x;
+ rig.position.z+=xrHeadA.z-after.z;
 }
-function updateXRLocomotion(dt){
+function updateXRLocomotion(dt,xrFrame){
  if(!renderer.xr.isPresenting)return;
  const sources=renderer.xr.getSession()?.inputSources||[];
  let left=null,right=null;
  for(const src of sources){
-   if(src.handedness==='left')left=src;
-   else if(src.handedness==='right')right=src;
+  if(src.handedness==='left')left=src;
+  else if(src.handedness==='right')right=src;
  }
  const walk=getXRStick(left),turn=getXRStick(right);
- const xrCamera=renderer.xr.getCamera(camera);
- const head=xrCamera.cameras?.[0]||xrCamera;
- if(!head)return;
- head.getWorldQuaternion(xrQ);
+ vrReport.leftStick=[walk.x,walk.y];
+ const trackedHead=getTrackedHeadPose(xrFrame);
+ if(!trackedHead){
+  xrPoseMissing++;
+  if(xrPoseMissing===90)recordXRFailure('WebXR viewer pose unavailable for 90 frames');
+  return;
+ }
+ xrPoseMissing=0;
  xrFw.set(0,0,-1).applyQuaternion(xrQ).setY(0).normalize();
  if(xrFw.lengthSq()<.00001)xrFw.set(0,0,-1);
  xrRt.crossVectors(xrFw,xrUp).normalize();
  const magnitude=Math.min(1,Math.hypot(walk.x,walk.y));
- head.getWorldPosition(xrHeadA);
+ const previousX=trackedHead.x,previousZ=trackedHead.z;
  let dx=0,dz=0;
  if(magnitude>.16){
-   const adjusted=(magnitude-.16)/.84;
-   const dist=2.6*dt*adjusted/magnitude;
-   dx=(xrFw.x*(-walk.y)+xrRt.x*walk.x)*dist;
-   dz=(xrFw.z*(-walk.y)+xrRt.z*walk.x)*dist;
+  const adjusted=(magnitude-.16)/.84;
+  const dist=2.6*dt*adjusted/magnitude;
+  dx=(xrFw.x*(-walk.y)+xrRt.x*walk.x)*dist;
+  dz=(xrFw.z*(-walk.y)+xrRt.z*walk.x)*dist;
  }
- if(collisionReady)xrGroundFollow(xrHeadA,dx,dz,dt);
- updateXRDiagnostics(dt,xrHeadA.x,xrHeadA.z,rig.position.y);
- // Continuous analog turn: rotate for as long as the stick is held.
+ if(collisionReady)xrGroundFollow(trackedHead,dx,dz,dt);
+ // Diagnostics use the tracked world position *after* the rig moved.
+ const newHead=getTrackedHeadPose(xrFrame);
+ updateXRDiagnostics(dt,newHead?.x??previousX,newHead?.z??previousZ,rig.position.y);
  const analog=Math.abs(turn.x)<.16?0:Math.sign(turn.x)*(Math.abs(turn.x)-.16)/.84;
  xrTurnVelocity=THREE.MathUtils.damp(xrTurnVelocity,-analog*XR_TURN_RATE,XR_TURN_RESPONSE,dt);
- if(Math.abs(xrTurnVelocity)>.001)xrSmoothTurn(head,xrTurnVelocity*dt);
+ if(Math.abs(xrTurnVelocity)>.001)xrSmoothTurn(null,xrTurnVelocity*dt,xrFrame);
 }
 // Immersive-VR entry and controller teleportation; available only on supported secure origins.
 const hiddenVR=VRButton.createButton(renderer,{optionalFeatures:['local-floor','bounded-floor','hand-tracking']});
@@ -468,7 +494,7 @@ for(let i=0;i<2;i++){
  const ray=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3(0,0,-1)]),new THREE.LineBasicMaterial({color:0xdac28e}));ray.scale.z=8;controller.add(ray);
  controller.addEventListener('selectstart',()=>{if(renderer.xr.isPresenting)moveToController(controller)})
 }
-renderer.xr.addEventListener('sessionstart',()=>{vrReport={state:'Starting VR',indexedMeshes:collisionMeshes.length,floorRayHits:0,groundY:null,playerY:null,position:null,frames:0,error:'',updatedAt:new Date().toISOString()};publishVRReport();xrInfoPanel.visible=true;xrTurnVelocity=0;vrWalkState.velocity=0;rig.rotation.y=0;buildWalkPhysics().then(ok=>{if(ok&&renderer.xr.isPresenting)status('Quest 3 capsule collision ready: walk on ramps & floors; hold right stick to turn');});window.poornaNavigation?.vrStart();window.poornaExhibition?.stop();rig.position.set(0,modelBounds.min.y,modelBounds.max.z+4);status('Quest 3: left joystick walks · right joystick smooth turning · trigger teleports.');tag.textContent='IMMERSIVE VR ACTIVE'});
+renderer.xr.addEventListener('sessionstart',()=>{vrReport={state:'Starting VR',indexedMeshes:collisionMeshes.length,floorRayHits:0,groundY:null,playerY:null,position:null,frames:0,error:'',updatedAt:new Date().toISOString()};publishVRReport();xrInfoPanel.visible=true;xrTurnVelocity=0;vrWalkState.velocity=0;xrPoseMissing=0;rig.rotation.y=0;buildWalkPhysics().then(ok=>{if(ok&&renderer.xr.isPresenting)status('Quest 3 capsule collision ready: walk on ramps & floors; hold right stick to turn');});window.poornaNavigation?.vrStart();window.poornaExhibition?.stop();rig.position.set(0,modelBounds.min.y,modelBounds.max.z+4);status('Quest 3: left joystick walks · right joystick smooth turning · trigger teleports.');tag.textContent='IMMERSIVE VR ACTIVE'});
 renderer.xr.addEventListener('sessionend',()=>{vrReport.state=vrReport.frames?'VR ended — last readings':'VR ended — no diagnostic samples';publishVRReport();xrInfoPanel.visible=false;window.poornaNavigation?.vrEnd();rig.position.set(0,0,0);tag.textContent=modelLoaded?'ACTUAL MARKET MODEL LOADED':'MODEL READY TO LOAD';setMode('orbit');status('Exited immersive VR mode')});
 $('vrEnterBtn').addEventListener('click',async()=>{
  if(!modelLoaded){notice('Load the actual market model before entering VR.');return}
