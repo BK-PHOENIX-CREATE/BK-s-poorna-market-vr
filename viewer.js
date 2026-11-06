@@ -118,7 +118,7 @@ function floorAt(x,z,foot,step=STEP,drop=2.6){
  for(const hit of downRay.intersectObjects(collisionMeshes,false)){
    if(!hit.face)continue;
    NORMAL.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
-   if(NORMAL.y>=SLOPE)return hit.point.y;
+   if(Math.abs(NORMAL.y)>=SLOPE)return hit.point.y;
  }
  // Exterior ground exists in the display scene at -0.08m.
  if(foot>=-2.5&&foot<=3&&x>=modelBounds.min.x-12&&x<=modelBounds.max.x+12&&z>=modelBounds.min.z-12&&z<=modelBounds.max.z+12)return -.08;
@@ -239,7 +239,8 @@ document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement
 const xrFw=new THREE.Vector3(),xrRt=new THREE.Vector3(),xrQ=new THREE.Quaternion();
 const xrHeadA=new THREE.Vector3(),xrHeadB=new THREE.Vector3(),xrUp=new THREE.Vector3(0,1,0);
 const xrCast=new THREE.Raycaster(),xrWallNormal=new THREE.Vector3(),xrTravel=new THREE.Vector3();
-let xrTurnArmed=true,xrTurnCooldown=0,xrTurnRemaining=0,xrFallVelocity=0;
+let xrTurnVelocity=0,xrFallVelocity=0;
+const XR_TURN_RATE=THREE.MathUtils.degToRad(75),XR_TURN_RESPONSE=11;
 function getXRStick(source){
  const a=source?.gamepad?.axes||[];
  // Quest Touch Plus commonly maps sticks to axes 2,3; compatible fallbacks use 0,1.
@@ -327,18 +328,10 @@ function updateXRLocomotion(dt){
    dz=(xrFw.z*(-walk.y)+xrRt.z*walk.x)*dist;
  }
  if(collisionReady)xrGroundFollow(xrHeadA,dx,dz,dt);
- // A smaller 12° turn, animated across multiple frames instead of an
- // abrupt 30° jump. Push again after releasing the stick for the next turn.
- xrTurnCooldown=Math.max(0,xrTurnCooldown-dt);
- if(Math.abs(turn.x)<.30)xrTurnArmed=true;
- if(Math.abs(turn.x)>.67&&xrTurnArmed&&xrTurnCooldown<=0){
-   xrTurnRemaining-=Math.sign(turn.x)*(Math.PI/15);
-   xrTurnArmed=false;xrTurnCooldown=.12;
- }
- if(Math.abs(xrTurnRemaining)>.00001){
-   const angle=Math.sign(xrTurnRemaining)*Math.min(Math.abs(xrTurnRemaining),1.50*dt);
-   xrSmoothTurn(head,angle);xrTurnRemaining-=angle;
- }
+ // Continuous analog turn: rotate for as long as the stick is held.
+ const analog=Math.abs(turn.x)<.16?0:Math.sign(turn.x)*(Math.abs(turn.x)-.16)/.84;
+ xrTurnVelocity=THREE.MathUtils.damp(xrTurnVelocity,-analog*XR_TURN_RATE,XR_TURN_RESPONSE,dt);
+ if(Math.abs(xrTurnVelocity)>.001)xrSmoothTurn(head,xrTurnVelocity*dt);
 }
 // Immersive-VR entry and controller teleportation; available only on supported secure origins.
 const hiddenVR=VRButton.createButton(renderer,{optionalFeatures:['local-floor','bounded-floor','hand-tracking']});
@@ -360,7 +353,7 @@ function moveToController(controller){
  for(const hit of hits){
    if(!hit.face)continue;
    xrWallNormal.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
-   if(xrWallNormal.y>=SLOPE){target=hit.point;break}
+   if(Math.abs(xrWallNormal.y)>=SLOPE){target=hit.point;break}
  }
  if(!target){
    const groundHits=raycaster.intersectObject(teleportSurface);
@@ -380,7 +373,7 @@ for(let i=0;i<2;i++){
  const ray=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3(0,0,-1)]),new THREE.LineBasicMaterial({color:0xdac28e}));ray.scale.z=8;controller.add(ray);
  controller.addEventListener('selectstart',()=>{if(renderer.xr.isPresenting)moveToController(controller)})
 }
-renderer.xr.addEventListener('sessionstart',()=>{xrTurnArmed=true;xrTurnCooldown=0;xrTurnRemaining=0;xrFallVelocity=0;rig.rotation.y=0;buildWalkPhysics().then(ok=>{if(ok&&renderer.xr.isPresenting)status('Quest 3: walk on ramps and floors · left stick move · right stick gentle 12° turns · trigger teleport');});window.poornaNavigation?.vrStart();window.poornaExhibition?.stop();rig.position.set(0,0,modelBounds.max.z+4);status('Quest 3: left joystick walks · right joystick snap-turns · trigger teleports.');tag.textContent='IMMERSIVE VR ACTIVE'});
+renderer.xr.addEventListener('sessionstart',()=>{xrTurnVelocity=0;xrFallVelocity=0;rig.rotation.y=0;buildWalkPhysics().then(ok=>{if(ok&&renderer.xr.isPresenting)status('Quest 3: walk on ramps and floors · left stick move · right stick continuous smooth turning · trigger teleport');});window.poornaNavigation?.vrStart();window.poornaExhibition?.stop();rig.position.set(0,0,modelBounds.max.z+4);status('Quest 3: left joystick walks · right joystick smooth turning · trigger teleports.');tag.textContent='IMMERSIVE VR ACTIVE'});
 renderer.xr.addEventListener('sessionend',()=>{window.poornaNavigation?.vrEnd();rig.position.set(0,0,0);tag.textContent=modelLoaded?'ACTUAL MARKET MODEL LOADED':'MODEL READY TO LOAD';setMode('orbit');status('Exited immersive VR mode')});
 $('vrEnterBtn').addEventListener('click',async()=>{
  if(!modelLoaded){notice('Load the actual market model before entering VR.');return}
