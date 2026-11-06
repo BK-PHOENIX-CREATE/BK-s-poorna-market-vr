@@ -52,10 +52,10 @@ function makeCamera(mode){
    camera.position.set(center.x,1.72,box.max.z+4);
    const direction=new THREE.Vector3(center.x,1.65,center.z).sub(camera.position).normalize();yaw=Math.atan2(-direction.x,-direction.z);pitch=0;
    camera.rotation.order='YXZ';camera.rotation.set(pitch,yaw,0);orbit.enabled=false;modeLabel.textContent='HUMAN SCALE / WALK';
-   status('Click inside the viewer to look around. W A S D to move. Esc to release the mouse.');
+   status('Walk: WASD move · Space / E rise · C / Q descend · Shift faster · click to look · Esc release.');
  }
 }
-function setMode(next){currentMode=next;document.querySelectorAll('.mode-tab').forEach(b=>b.classList.toggle('selected',b.dataset.mode===next));
+function setMode(next){keys.clear();currentMode=next;document.querySelectorAll('.mode-tab').forEach(b=>b.classList.toggle('selected',b.dataset.mode===next));
  if(document.pointerLockElement===renderer.domElement)document.exitPointerLock?.();makeCamera(next);
  if(!modelLoaded&&next==='walk')notice('Load the market model first for an architectural walkthrough.');
 }
@@ -75,17 +75,20 @@ renderer.setAnimationLoop(()=>{
      if(keys.has('KeyS')||keys.has('ArrowDown'))camera.position.addScaledVector(f,-speed);
      if(keys.has('KeyD')||keys.has('ArrowRight'))camera.position.addScaledVector(right,speed);
      if(keys.has('KeyA')||keys.has('ArrowLeft'))camera.position.addScaledVector(right,-speed);
-     camera.position.y=1.72;
+     // Free vertical exploration for elevated floors, stairwells and roof levels.
+     if(keys.has('Space')||keys.has('KeyE')||keys.has('KeyR'))camera.position.y+=speed;
+     if(keys.has('KeyC')||keys.has('KeyQ')||keys.has('KeyF'))camera.position.y-=speed;
      const ext=modelBounds.clone().expandByScalar(15);
      camera.position.x=THREE.MathUtils.clamp(camera.position.x,ext.min.x,ext.max.x);
      camera.position.z=THREE.MathUtils.clamp(camera.position.z,ext.min.z,ext.max.z);
+     camera.position.y=THREE.MathUtils.clamp(camera.position.y,Math.max(1.5,modelBounds.min.y+1.5),modelBounds.max.y+12);
    }else orbit.update();
  }
  renderer.render(scene,camera);
 });
 mount.addEventListener('click',()=>{if(currentMode==='walk'&&!renderer.xr.isPresenting&&document.pointerLockElement!==renderer.domElement){renderer.domElement.requestPointerLock?.().catch(()=>{})}});
 document.addEventListener('mousemove',e=>{if(document.pointerLockElement!==renderer.domElement||currentMode!=='walk')return;yaw-=e.movementX*.0021;pitch=Math.max(-1.42,Math.min(1.42,pitch-e.movementY*.0021));camera.rotation.set(pitch,yaw,0)});
-window.addEventListener('keydown',e=>{if(e.target&&/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName))return;keys.add(e.code);if(currentMode==='walk'&&['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)&&document.activeElement===mount)e.preventDefault()});
+window.addEventListener('keydown',e=>{if(e.target&&/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName))return;keys.add(e.code);if(currentMode==='walk'&&['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code))e.preventDefault()});
 window.addEventListener('keyup',e=>keys.delete(e.code));window.addEventListener('blur',()=>keys.clear());
 const loader=new GLTFLoader();
 function load(file){
