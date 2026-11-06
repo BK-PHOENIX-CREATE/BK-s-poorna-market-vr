@@ -215,7 +215,7 @@ function load(file){
   if(modelSize.x>2000||modelSize.z>2000){const scale=95/Math.max(modelSize.x,modelSize.z);model.scale.setScalar(scale);modelBounds.setFromObject(model)}
   scene.add(model);
   modelLoaded=true;isLoading=false;tag.textContent='ACTUAL MARKET MODEL LOADED';splash.hidden=true;progress.hidden=true;grid.visible=false;ground.visible=true;
-  setMode('orbit');window.poornaExhibition?.modelReady();window.poornaNavigation?.modelReady();status(`Loaded successfully · ${meshCount} draw groups · Orbit / Sky / Walk / Plan / VR available`);
+  setMode('orbit');buildWalkPhysics().catch(error=>console.error('Preparing VR walking surfaces',error));window.poornaExhibition?.modelReady();window.poornaNavigation?.modelReady();status(`Loaded successfully · ${meshCount} draw groups · Orbit / Sky / Walk / Plan / VR available`);
   if(isBlob)URL.revokeObjectURL(url);
  },evt=>{if(evt.lengthComputable){const pct=Math.min(98,Math.round(evt.loaded/evt.total*100));bar.style.width=pct+'%';progText.textContent=`Downloading 3D architecture · ${pct}%`;
  }else{progText.textContent=`Downloading model · ${(evt.loaded/1024/1024).toFixed(0)} MB received`}
@@ -233,47 +233,113 @@ $('fullscreenBtn').addEventListener('click',async()=>{const shell=$('viewerShell
 document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement)$('viewerShell').classList.remove('is-fullscreen');resize()});
 
 // Meta Quest 3 joystick locomotion: Touch left stick walks, right stick snap-turns.
+// Meta Quest 3: headset-relative directional walking on the GLB's REAL geometry.
+// Left stick: forward/back/strafe relative to the headset yaw, regardless of
+// where the physical controller points. Right stick: smooth 12-degree steps.
 const xrFw=new THREE.Vector3(),xrRt=new THREE.Vector3(),xrQ=new THREE.Quaternion();
 const xrHeadA=new THREE.Vector3(),xrHeadB=new THREE.Vector3(),xrUp=new THREE.Vector3(0,1,0);
-let xrTurnArmed=true,xrTurnCooldown=0;
+const xrCast=new THREE.Raycaster(),xrWallNormal=new THREE.Vector3(),xrTravel=new THREE.Vector3();
+let xrTurnArmed=true,xrTurnCooldown=0,xrTurnRemaining=0,xrFallVelocity=0;
 function getXRStick(source){
  const a=source?.gamepad?.axes||[];
+ // Quest Touch Plus commonly maps sticks to axes 2,3; compatible fallbacks use 0,1.
  const x=a.length>=4?(a[2]||0):(a[0]||0),y=a.length>=4?(a[3]||0):(a[1]||0);
- return {x:Math.abs(x)>.18?x:0,y:Math.abs(y)>.18?y:0};
+ return {x:Math.abs(x)>.16?x:0,y:Math.abs(y)>.16?y:0};
+}
+function xrWallBlocked(head,dx,dz){
+ const dist=Math.hypot(dx,dz);
+ if(dist<.00001||!collisionReady)return false;
+ xrTravel.set(dx/dist,0,dz/dist);
+ // Probe walls at knee and upper-torso height from the tracked headset,
+ // not from the desktop camera (whose position is unused in immersive XR).
+ for(const height of [.55,1.28]){
+   xrCast.set(new THREE.Vector3(head.x,rig.position.y+height,head.z),xrTravel);
+   xrCast.near=0;xrCast.far=dist+.32;xrCast.firstHitOnly=false;
+   const hits=xrCast.intersectObjects(collisionMeshes,false);
+   for(const hit of hits){
+     if(!hit.face)continue;
+     xrWallNormal.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
+     if(Math.abs(xrWallNormal.y)<.52)return true;
+   }
+ }
+ return false;
+}
+function xrGroundFollow(head,dx,dz,dt){
+ // If collision building is still underway, disable physical movement
+ // instead of letting the headset pass through market floors and ramps.
+ if(!collisionReady)return;
+ const feet=rig.position.y;
+ const blocked=xrWallBlocked(head,dx,dz);
+ let targetX=head.x+(blocked?0:dx),targetZ=head.z+(blocked?0:dz);
+ let floor=floorAt(targetX,targetZ,feet,STEP,1.8);
+ if(floor!==null&&floor>feet+STEP+.015){
+   targetX=head.x;targetZ=head.z;
+   floor=floorAt(targetX,targetZ,feet,STEP,1.8);
+ }
+ const tx=targetX-head.x,tz=targetZ-head.z;
+ rig.position.x+=tx;rig.position.z+=tz;
+ rig.position.x=THREE.MathUtils.clamp(rig.position.x,modelBounds.min.x-15,modelBounds.max.x+15);
+ rig.position.z=THREE.MathUtils.clamp(rig.position.z,modelBounds.min.z-15,modelBounds.max.z+15);
+ if(floor!==null&&floor>=feet-.75){
+   rig.position.y=floor;xrFallVelocity=0;
+ }else{
+   xrFallVelocity=Math.min(18,xrFallVelocity+16*dt);
+   const nextY=feet-xrFallVelocity*dt;
+   const landing=floorAt(targetX,targetZ,nextY,STEP,1.4);
+   if(landing!==null&&nextY<=landing){rig.position.y=landing;xrFallVelocity=0}
+   else rig.position.y=Math.max(modelBounds.min.y-1,nextY);
+ }
+}
+function xrSmoothTurn(head,angle){
+ if(Math.abs(angle)<.000001)return;
+ // Rotate the rig around the actual headset position, so a physically
+ // offset / room-scale user doesn't orbit around an invisible world origin.
+ head.getWorldPosition(xrHeadA);
+ rig.rotation.y+=angle;
+ rig.updateMatrixWorld(true);
+ head.getWorldPosition(xrHeadB);
+ rig.position.x+=xrHeadA.x-xrHeadB.x;
+ rig.position.z+=xrHeadA.z-xrHeadB.z;
 }
 function updateXRLocomotion(dt){
  if(!renderer.xr.isPresenting)return;
  const sources=renderer.xr.getSession()?.inputSources||[];
  let left=null,right=null;
- for(const src of sources){if(src.handedness==='left')left=src;else if(src.handedness==='right')right=src}
+ for(const src of sources){
+   if(src.handedness==='left')left=src;
+   else if(src.handedness==='right')right=src;
+ }
  const walk=getXRStick(left),turn=getXRStick(right);
  const xrCamera=renderer.xr.getCamera(camera);
  const head=xrCamera.cameras?.[0]||xrCamera;
  if(!head)return;
  head.getWorldQuaternion(xrQ);
  xrFw.set(0,0,-1).applyQuaternion(xrQ).setY(0).normalize();
- if(xrFw.lengthSq()<1e-5)xrFw.set(0,0,-1);
+ if(xrFw.lengthSq()<.00001)xrFw.set(0,0,-1);
  xrRt.crossVectors(xrFw,xrUp).normalize();
  const magnitude=Math.min(1,Math.hypot(walk.x,walk.y));
- if(magnitude>.18){
-  const speed=2.8*dt*(magnitude-.18)/(.82*magnitude);
-  rig.position.addScaledVector(xrFw,-walk.y*speed);
-  rig.position.addScaledVector(xrRt,walk.x*speed);
-  rig.position.x=THREE.MathUtils.clamp(rig.position.x,modelBounds.min.x-15,modelBounds.max.x+15);
-  rig.position.z=THREE.MathUtils.clamp(rig.position.z,modelBounds.min.z-15,modelBounds.max.z+15);
+ head.getWorldPosition(xrHeadA);
+ let dx=0,dz=0;
+ if(magnitude>.16){
+   const adjusted=(magnitude-.16)/.84;
+   const dist=2.6*dt*adjusted/magnitude;
+   dx=(xrFw.x*(-walk.y)+xrRt.x*walk.x)*dist;
+   dz=(xrFw.z*(-walk.y)+xrRt.z*walk.x)*dist;
  }
+ if(collisionReady)xrGroundFollow(xrHeadA,dx,dz,dt);
+ // A smaller 12° turn, animated across multiple frames instead of an
+ // abrupt 30° jump. Push again after releasing the stick for the next turn.
  xrTurnCooldown=Math.max(0,xrTurnCooldown-dt);
- if(Math.abs(turn.x)<.35)xrTurnArmed=true;
- if(Math.abs(turn.x)>.75&&xrTurnArmed&&xrTurnCooldown===0){
-  head.getWorldPosition(xrHeadA);
-  rig.rotation.y-=Math.sign(turn.x)*Math.PI/6;
-  rig.updateMatrixWorld(true);
-  head.getWorldPosition(xrHeadB);
-  rig.position.x+=xrHeadA.x-xrHeadB.x;rig.position.z+=xrHeadA.z-xrHeadB.z;
-  xrTurnArmed=false;xrTurnCooldown=.28;
+ if(Math.abs(turn.x)<.30)xrTurnArmed=true;
+ if(Math.abs(turn.x)>.67&&xrTurnArmed&&xrTurnCooldown<=0){
+   xrTurnRemaining-=Math.sign(turn.x)*(Math.PI/15);
+   xrTurnArmed=false;xrTurnCooldown=.12;
+ }
+ if(Math.abs(xrTurnRemaining)>.00001){
+   const angle=Math.sign(xrTurnRemaining)*Math.min(Math.abs(xrTurnRemaining),1.50*dt);
+   xrSmoothTurn(head,angle);xrTurnRemaining-=angle;
  }
 }
-
 // Immersive-VR entry and controller teleportation; available only on supported secure origins.
 const hiddenVR=VRButton.createButton(renderer,{optionalFeatures:['local-floor','bounded-floor','hand-tracking']});
 hiddenVR.style.display='none';hiddenVR.setAttribute('aria-hidden','true');document.body.appendChild(hiddenVR);
@@ -290,7 +356,7 @@ for(let i=0;i<2;i++){
  const ray=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3(0,0,-1)]),new THREE.LineBasicMaterial({color:0xdac28e}));ray.scale.z=8;controller.add(ray);
  controller.addEventListener('selectstart',()=>{if(renderer.xr.isPresenting)moveToController(controller)})
 }
-renderer.xr.addEventListener('sessionstart',()=>{xrTurnArmed=true;xrTurnCooldown=0;rig.rotation.y=0;window.poornaNavigation?.vrStart();window.poornaExhibition?.stop();rig.position.set(0,0,modelBounds.max.z+4);status('Quest 3: left joystick walks · right joystick snap-turns · trigger teleports.');tag.textContent='IMMERSIVE VR ACTIVE'});
+renderer.xr.addEventListener('sessionstart',()=>{xrTurnArmed=true;xrTurnCooldown=0;xrTurnRemaining=0;xrFallVelocity=0;rig.rotation.y=0;buildWalkPhysics().then(ok=>{if(ok&&renderer.xr.isPresenting)status('Quest 3: walk on ramps and floors · left stick move · right stick gentle 12° turns · trigger teleport');});window.poornaNavigation?.vrStart();window.poornaExhibition?.stop();rig.position.set(0,0,modelBounds.max.z+4);status('Quest 3: left joystick walks · right joystick snap-turns · trigger teleports.');tag.textContent='IMMERSIVE VR ACTIVE'});
 renderer.xr.addEventListener('sessionend',()=>{window.poornaNavigation?.vrEnd();rig.position.set(0,0,0);tag.textContent=modelLoaded?'ACTUAL MARKET MODEL LOADED':'MODEL READY TO LOAD';setMode('orbit');status('Exited immersive VR mode')});
 $('vrEnterBtn').addEventListener('click',async()=>{
  if(!modelLoaded){notice('Load the actual market model before entering VR.');return}
