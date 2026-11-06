@@ -47,7 +47,8 @@ function notice(s){(window.marketToast||console.warn)(s)}
 // Save an exact desktop Walk viewpoint as the common Walk + Quest spawn.
 // Local storage remembers it in this browser; the share URL transfers it
 // to another device (including Meta Quest Browser).
-const START_STORAGE='poorna-walk-vr-start-v1';
+// v2 intentionally drops the old opposite-corner saved start.
+const START_STORAGE='poorna-walk-vr-start-v2';
 let chosenStart=null;
 function validStart(value){
  return value&&Array.isArray(value.position)&&value.position.length===3&&
@@ -114,8 +115,11 @@ function entranceSpawn(){
   return {position,target};
  }
  const b=modelBounds,sz=b.getSize(new THREE.Vector3());
- const position=new THREE.Vector3(b.min.x-Math.max(3,sz.x*.035),b.min.y,b.max.z+Math.max(6,sz.z*.11));
- const target=new THREE.Vector3(b.min.x+sz.x*.52,b.min.y+EYE,b.max.z-sz.z*.20);
+ // Correct market entry corner: on the minimap this is the BOTTOM-RIGHT
+ // (max X, min Z), where the signed brick corner is on the LEFT and the
+ // long white-arched façade recedes to the RIGHT in the user's reference.
+ const position=new THREE.Vector3(b.max.x+Math.max(5,sz.x*.075),b.min.y,b.min.z-Math.max(7,sz.z*.12));
+ const target=new THREE.Vector3(b.max.x-sz.x*.54,b.min.y+EYE,b.min.z+sz.z*.23);
  return {position,target};
 }
 function entranceYaw(){
