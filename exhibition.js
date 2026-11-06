@@ -61,9 +61,11 @@ function view(id,fromTour=false){
  if(!fromTour)pause();
  const stop=stops.find(s=>s.id===id);if(!stop)return;
  if(document.pointerLockElement===renderer.domElement)document.exitPointerLock?.();
+ const beforePosition=camera.position.clone(),beforeTarget=orbit.target.clone();
  v.setMode('orbit'); // preserves existing Sky and grounded Walk functionality
+ camera.position.copy(beforePosition);orbit.target.copy(beforeTarget);orbit.update();
  const pose=positionFor(id);
- tween={start:camera.position.clone(),startTarget:orbit.target.clone(),end:pose.position,endTarget:pose.target,time:0,duration:1.7};
+ tween={start:beforePosition,startTarget:beforeTarget,end:pose.position,endTarget:pose.target,time:0,duration:1.7};
  elements.views.value=id;
  v.status('Saved architectural view: '+stop.title);
 }
