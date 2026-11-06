@@ -92,3 +92,10 @@
 .vr-debug-report p{color:#c7d3c8;margin:9px 0}
 .vr-debug-report pre{white-space:pre-wrap;word-break:break-word;background:#0c1e15;color:#e3efe4;border:1px solid #637e68;padding:12px;font:12px/1.55 ui-monospace,Consolas,monospace}
 .vr-debug-report button{background:#e0c295;color:#17301f;border:0;padding:10px 14px;font-weight:700;cursor:pointer}
+
+/* Accurate user-saved desktop/VR spawn controls */
+.viewport-actions{flex-wrap:wrap;max-width:calc(100% - 50px);z-index:7}
+.viewport-actions button[hidden]{display:none!important}
+#saveWalkStartBtn{border-color:#c9b182;color:#f8edda;background:rgba(35,55,40,.94)}
+#shareWalkStartBtn{border-color:#7a9a7f;color:#dcf0dd}
+@media(max-width:680px){.viewport-actions{left:12px;bottom:12px;gap:5px}.viewport-actions button{padding:8px 9px;font-size:10px}.viewport-actions button span{display:inline}}
