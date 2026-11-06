@@ -307,7 +307,7 @@ renderer.setAnimationLoop((time,xrFrame)=>{
      }
    }else orbit.update();
  }
- if(renderer.xr.isPresenting){try{updateXRLocomotion(delta,xrFrame)}catch(error){if(!vrReport.error||vrReport.frames%120===0)recordXRFailure(error)}}
+ if(renderer.xr.isPresenting){try{updateXRLocomotion(delta,xrFrame);updateXRBackShortcut()}catch(error){if(!vrReport.error||vrReport.frames%120===0)recordXRFailure(error)}}
  window.poornaExhibition?.tick(delta);
  window.poornaNavigation?.tick(delta);
  if(!window.poornaNavigation?.renderStereo?.())renderer.render(scene,camera);
@@ -561,6 +561,61 @@ function updateXRLocomotion(dt,xrFrame){
  if(Math.abs(xrTurnVelocity)>.001)xrSmoothTurn(null,xrTurnVelocity*dt,xrFrame);
 }
 // Immersive-VR entry and controller teleportation; available only on supported secure origins.
+// Back to website: visible in the headset, selectable with either trigger.
+// Quest right-hand B button is also a one-press exit shortcut.
+const xrBackCanvas=document.createElement('canvas');
+xrBackCanvas.width=512;xrBackCanvas.height=160;
+const xrBackCtx=xrBackCanvas.getContext('2d');
+xrBackCtx.fillStyle='#19291f';xrBackCtx.fillRect(0,0,512,160);
+xrBackCtx.strokeStyle='#c9ae84';xrBackCtx.lineWidth=8;xrBackCtx.strokeRect(5,5,502,150);
+xrBackCtx.fillStyle='#f5f0df';xrBackCtx.font='bold 46px Arial';
+xrBackCtx.textAlign='center';xrBackCtx.textBaseline='middle';
+xrBackCtx.fillText('← BACK / EXIT VR',256,80);
+const xrBackTexture=new THREE.CanvasTexture(xrBackCanvas);
+xrBackTexture.colorSpace=THREE.SRGBColorSpace;
+const xrBackButton=new THREE.Mesh(new THREE.PlaneGeometry(.44,.1375),
+ new THREE.MeshBasicMaterial({map:xrBackTexture,side:THREE.DoubleSide,depthTest:false,depthWrite:false,toneMapped:false}));
+xrBackButton.name='Exit VR to website';
+xrBackButton.renderOrder=11000;xrBackButton.frustumCulled=false;xrBackButton.visible=false;
+scene.add(xrBackButton);
+const xrBackOffset=new THREE.Vector3(.22,-.29,-.85),xrBackHead=new THREE.Vector3();
+const xrBackQuat=new THREE.Quaternion(),xrBackRay=new THREE.Raycaster();
+const xrBackRotation=new THREE.Matrix4(),xrBackForward=new THREE.Vector3(0,0,-1);
+let xrBackButtonHeld=false;
+function positionXRBackButton(){
+ if(!renderer.xr.isPresenting||!xrBackButton.visible)return;
+ rig.updateWorldMatrix(true,false);
+ xrBackHead.copy(xrTrackedLocal).applyMatrix4(rig.matrixWorld);
+ rig.getWorldQuaternion(xrBackQuat).multiply(xrTrackedOrientation);
+ xrBackButton.position.copy(xrBackOffset).applyQuaternion(xrBackQuat).add(xrBackHead);
+ xrBackButton.quaternion.copy(xrBackQuat);xrBackButton.updateMatrixWorld(true);
+}
+async function exitQuestVR(){
+ const session=renderer.xr.getSession();
+ if(!session)return;
+ xrBackButton.visible=false;
+ try{await session.end()}
+ catch(error){xrBackButton.visible=true;console.warn('Exit VR failed',error);status('Use Quest system menu if Back cannot end this session.')}
+}
+function selectVRBack(controller){
+ if(!renderer.xr.isPresenting||!xrBackButton.visible)return false;
+ positionXRBackButton();
+ controller.updateMatrixWorld(true);
+ xrBackRotation.identity().extractRotation(controller.matrixWorld);
+ xrBackRay.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+ xrBackRay.ray.direction.copy(xrBackForward).applyMatrix4(xrBackRotation).normalize();
+ xrBackRay.near=0;xrBackRay.far=5;
+ if(xrBackRay.intersectObject(xrBackButton,false).length===0)return false;
+ void exitQuestVR();return true;
+}
+function updateXRBackShortcut(){
+ if(!renderer.xr.isPresenting)return;
+ positionXRBackButton();
+ const right=Array.from(renderer.xr.getSession()?.inputSources||[]).find(source=>source.handedness==='right');
+ const down=!!right?.gamepad?.buttons?.[5]?.pressed;
+ if(down&&!xrBackButtonHeld)void exitQuestVR();
+ xrBackButtonHeld=down;
+}
 const hiddenVR=VRButton.createButton(renderer,{optionalFeatures:['local-floor','bounded-floor','hand-tracking']});
 hiddenVR.style.display='none';hiddenVR.setAttribute('aria-hidden','true');document.body.appendChild(hiddenVR);
 const raycaster=new THREE.Raycaster(),rot=new THREE.Matrix4();
@@ -600,10 +655,10 @@ for(let i=0;i<2;i++){
  const controller=renderer.xr.getController(i);rig.add(controller);
  // Diagnostic HUD is attached to the scene and follows the headset.
  const ray=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3(0,0,-1)]),new THREE.LineBasicMaterial({color:0xdac28e}));ray.scale.z=8;controller.add(ray);
- controller.addEventListener('selectstart',()=>{if(renderer.xr.isPresenting)moveToController(controller)})
+ controller.addEventListener('selectstart',()=>{if(renderer.xr.isPresenting&&!selectVRBack(controller))moveToController(controller)})
 }
-renderer.xr.addEventListener('sessionstart',()=>{vrReport={state:'Starting VR',indexedMeshes:collisionMeshes.length,floorRayHits:0,groundY:null,playerY:null,position:null,frames:0,error:'',updatedAt:new Date().toISOString()};publishVRReport();xrInfoPanel.visible=true;xrTurnVelocity=0;vrWalkState.velocity=0;xrPoseMissing=0;xrSpawnPending=true;rig.rotation.y=0;buildWalkPhysics().then(ok=>{if(ok&&renderer.xr.isPresenting)status('Quest 3 capsule collision ready: walk on ramps & floors; hold right stick to turn');});window.poornaNavigation?.vrStart();window.poornaExhibition?.stop();rig.position.copy(entranceSpawn().position);status('Quest 3: left joystick walks · right joystick smooth turning · trigger teleports.');tag.textContent='IMMERSIVE VR ACTIVE'});
-renderer.xr.addEventListener('sessionend',()=>{vrReport.state=vrReport.frames?'VR ended — last readings':'VR ended — no diagnostic samples';publishVRReport();xrInfoPanel.visible=false;window.poornaNavigation?.vrEnd();rig.position.set(0,0,0);tag.textContent=modelLoaded?'ACTUAL MARKET MODEL LOADED':'MODEL READY TO LOAD';setMode('orbit');status('Exited immersive VR mode')});
+renderer.xr.addEventListener('sessionstart',()=>{xrBackButton.visible=true;xrBackButtonHeld=false;vrReport={state:'Starting VR',indexedMeshes:collisionMeshes.length,floorRayHits:0,groundY:null,playerY:null,position:null,frames:0,error:'',updatedAt:new Date().toISOString()};publishVRReport();xrInfoPanel.visible=true;xrTurnVelocity=0;vrWalkState.velocity=0;xrPoseMissing=0;xrSpawnPending=true;rig.rotation.y=0;buildWalkPhysics().then(ok=>{if(ok&&renderer.xr.isPresenting)status('Quest 3 capsule collision ready: walk on ramps & floors; hold right stick to turn');});window.poornaNavigation?.vrStart();window.poornaExhibition?.stop();rig.position.copy(entranceSpawn().position);status('Quest 3: left joystick walks · right joystick smooth turning · trigger teleports.');tag.textContent='IMMERSIVE VR ACTIVE'});
+renderer.xr.addEventListener('sessionend',()=>{xrBackButton.visible=false;xrBackButtonHeld=false;vrReport.state=vrReport.frames?'VR ended — last readings':'VR ended — no diagnostic samples';publishVRReport();xrInfoPanel.visible=false;window.poornaNavigation?.vrEnd();rig.position.set(0,0,0);tag.textContent=modelLoaded?'ACTUAL MARKET MODEL LOADED':'MODEL READY TO LOAD';setMode('orbit');status('Exited immersive VR mode')});
 $('vrEnterBtn').addEventListener('click',async()=>{
  if(!modelLoaded){notice('Load the actual market model before entering VR.');return}
  if(!window.isSecureContext){notice('Immersive VR requires HTTPS. Deploy the site to a secure URL.');return}
