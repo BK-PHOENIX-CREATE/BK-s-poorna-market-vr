@@ -34,6 +34,9 @@ const ground=new THREE.Mesh(new THREE.PlaneGeometry(520,520),new THREE.MeshStand
 const grid=new THREE.GridHelper(260,52,0xa4aea3,0xc7d1c6);grid.position.y=-.07;grid.material.opacity=.22;grid.material.transparent=true;scene.add(grid);
 let model=null,modelBounds=new THREE.Box3(new THREE.Vector3(-46,0,-38),new THREE.Vector3(46,20,38));
 let modelLoaded=false,isLoading=false,currentMode='orbit',visible=true,lockRequested=false;
+const EYE=1.7, STEP=.55, SLOPE=.55, RADIUS=.28;
+let collisionMeshes=[],collisionReady=false,collisionPromise=null,fallSpeed=0;
+const downRay=new THREE.Raycaster(),wallRay=new THREE.Raycaster(),DOWN=new THREE.Vector3(0,-1,0),NORMAL=new THREE.Vector3();
 const keys=new Set();let yaw=0,pitch=0;
 const text=$('viewerStatus'),tag=$('modelState'),modeLabel=$('viewModeName');
 function status(s){text.textContent=s}
@@ -49,46 +52,145 @@ function makeCamera(mode){
  }else if(mode==='plan'){
    camera.position.set(center.x,Math.max(90,r*1.65),center.z+.01);camera.up.set(0,0,-1);camera.lookAt(center.x,0,center.z);orbit.target.set(center.x,0,center.z);orbit.enableRotate=false;orbit.enabled=true;orbit.update();modeLabel.textContent='ARCHITECTURAL / PLAN';
  }else{
-   camera.position.set(center.x,1.72,box.max.z+4);
-   const direction=new THREE.Vector3(center.x,1.65,center.z).sub(camera.position).normalize();yaw=Math.atan2(-direction.x,-direction.z);pitch=0;
-   camera.rotation.order='YXZ';camera.rotation.set(pitch,yaw,0);orbit.enabled=false;modeLabel.textContent='HUMAN SCALE / WALK';
-   status('Walk: WASD move · Space / E rise · C / Q descend · Shift faster · click to look · Esc release.');
+   camera.position.set(mode==='sky'?center.x+r*.8:center.x,mode==='sky'?Math.max(h+12,r*.7):EYE,mode==='sky'?center.z+r*.85:box.max.z+4);
+   const target=new THREE.Vector3(center.x,mode==='sky'?Math.max(3,h*.4):EYE,center.z);
+   const dir=target.sub(camera.position).normalize();
+   yaw=Math.atan2(-dir.x,-dir.z);pitch=mode==='sky'?Math.asin(THREE.MathUtils.clamp(dir.y,-1,1)):0;
+   camera.rotation.order='YXZ';camera.rotation.set(pitch,yaw,0);orbit.enabled=false;
+   modeLabel.textContent=mode==='sky'?'AERIAL / FREE FLIGHT':'HUMAN SCALE / GROUNDED WALK';
+   if(mode==='walk'){
+     fallSpeed=0;
+     const floor=collisionReady?floorAt(camera.position.x,camera.position.z,camera.position.y-EYE,STEP,8):null;
+     if(floor!==null)camera.position.y=floor+EYE;
+     status('Walk: WASD across real floors/ramps · Shift faster · click to look · Esc release');
+   }else status('Sky: WASD fly · Space/E up · C/Q down · Shift faster · click to look');
  }
 }
-function setMode(next){keys.clear();currentMode=next;document.querySelectorAll('.mode-tab').forEach(b=>b.classList.toggle('selected',b.dataset.mode===next));
- if(document.pointerLockElement===renderer.domElement)document.exitPointerLock?.();makeCamera(next);
- if(!modelLoaded&&next==='walk')notice('Load the market model first for an architectural walkthrough.');
+function setMode(next){
+ keys.clear();currentMode=next;
+ document.querySelectorAll('.mode-tab').forEach(b=>b.classList.toggle('selected',b.dataset.mode===next));
+ if(document.pointerLockElement===renderer.domElement)document.exitPointerLock?.();
+ makeCamera(next);
 }
-document.querySelectorAll('.mode-tab').forEach(btn=>btn.addEventListener('click',()=>setMode(btn.dataset.mode)));
+document.querySelectorAll('.mode-tab').forEach(btn=>btn.addEventListener('click',async()=>{
+ const next=btn.dataset.mode;
+ if(next==='walk'){
+   if(!modelLoaded){notice('Load the market model first.');return}
+   if(!await buildWalkPhysics()){notice('Could not prepare walk collisions. You can still use Sky Mode.');return}
+ }
+ setMode(next);
+}));
 function resize(){const w=Math.max(1,mount.clientWidth),h=Math.max(1,mount.clientHeight);renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix()}
 const ro=new ResizeObserver(resize);ro.observe(mount);resize();makeCamera('orbit');
 const io=new IntersectionObserver(e=>{visible=e[0]?.isIntersecting??true},{threshold:.005});io.observe(mount);
+
+/* Collision queries use the actual market triangles. The BVH makes floor
+   raycasts practical without loading a simplified replacement model. */
+async function buildWalkPhysics(){
+ if(collisionReady)return true;
+ if(collisionPromise)return collisionPromise;
+ collisionPromise=(async()=>{
+  status('Preparing floors, stairs and ramps for Walk Mode…');
+  try{
+   const {computeBoundsTree,disposeBoundsTree,acceleratedRaycast}=await import('three-mesh-bvh');
+   THREE.BufferGeometry.prototype.computeBoundsTree=computeBoundsTree;
+   THREE.BufferGeometry.prototype.disposeBoundsTree=disposeBoundsTree;
+   THREE.Mesh.prototype.raycast=acceleratedRaycast;
+   const meshes=[];model.updateMatrixWorld(true);
+   model.traverse(o=>{if(o.isMesh&&o.geometry?.getAttribute('position'))meshes.push(o)});
+   collisionMeshes=[];
+   for(let i=0;i<meshes.length;i++){
+     const geometry=meshes[i].geometry;
+     if(!geometry.boundsTree)geometry.computeBoundsTree({maxLeafSize:20});
+     collisionMeshes.push(meshes[i]);
+     if(i%3===0){status('Indexing building surfaces '+(i+1)+' / '+meshes.length);await new Promise(resolve=>setTimeout(resolve,0))}
+   }
+   collisionReady=true;status('Real floor collisions ready.');return true;
+  }catch(e){console.error('Collision geometry failed',e);collisionMeshes=[];status('Walk collisions failed to initialize. Sky Mode is available.');return false}
+ })();
+ const ok=await collisionPromise;if(!ok)collisionPromise=null;return ok;
+}
+function floorAt(x,z,foot,step=STEP,drop=2.6){
+ if(!collisionReady)return null;
+ downRay.set(new THREE.Vector3(x,foot+step+.08,z),DOWN);
+ downRay.near=0;downRay.far=step+drop+.08;downRay.firstHitOnly=false;
+ for(const hit of downRay.intersectObjects(collisionMeshes,false)){
+   if(!hit.face)continue;
+   NORMAL.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
+   if(NORMAL.y>=SLOPE)return hit.point.y;
+ }
+ // Exterior ground exists in the display scene at -0.08m.
+ if(foot>=-2.5&&foot<=3&&x>=modelBounds.min.x-12&&x<=modelBounds.max.x+12&&z>=modelBounds.min.z-12&&z<=modelBounds.max.z+12)return -.08;
+ return null;
+}
+function wallAhead(dx,dz){
+ const distance=Math.hypot(dx,dz);if(distance<.00001)return false;
+ const direction=new THREE.Vector3(dx/distance,0,dz/distance);
+ for(const offset of [-.5,-1.15]){
+   wallRay.set(new THREE.Vector3(camera.position.x,camera.position.y+offset,camera.position.z),direction);
+   wallRay.near=0;wallRay.far=distance+RADIUS;wallRay.firstHitOnly=false;
+   for(const hit of wallRay.intersectObjects(collisionMeshes,false)){
+     if(!hit.face)continue;
+     NORMAL.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
+     if(Math.abs(NORMAL.y)<.5)return true;
+   }
+ }
+ return false;
+}
+function moveWalk(dx,dz,dt){
+ const feet=camera.position.y-EYE;
+ let x=camera.position.x+dx,z=camera.position.z+dz;
+ if(wallAhead(dx,dz)){x=camera.position.x;z=camera.position.z}
+ let floor=floorAt(x,z,feet,STEP,2.2);
+ if(floor!==null&&floor>feet+STEP+.02){
+   x=camera.position.x;z=camera.position.z;floor=floorAt(x,z,feet,STEP,2.2);
+ }
+ camera.position.x=x;camera.position.z=z;
+ if(floor!==null&&floor>=feet-.75){camera.position.y=floor+EYE;fallSpeed=0}
+ else{
+   fallSpeed=Math.min(23,fallSpeed+17*dt);
+   const nextFeet=feet-fallSpeed*dt;
+   const landing=floorAt(x,z,nextFeet,STEP,1.5);
+   if(landing!==null&&nextFeet<=landing){camera.position.y=landing+EYE;fallSpeed=0}
+   else camera.position.y=nextFeet+EYE;
+ }
+ const box=modelBounds.clone().expandByScalar(12);
+ camera.position.x=THREE.MathUtils.clamp(camera.position.x,box.min.x,box.max.x);
+ camera.position.z=THREE.MathUtils.clamp(camera.position.z,box.min.z,box.max.z);
+ if(camera.position.y<modelBounds.min.y+EYE-2){camera.position.y=modelBounds.min.y+EYE;fallSpeed=0}
+}
+
 const clock=new THREE.Clock();
 renderer.setAnimationLoop(()=>{
  const delta=Math.min(clock.getDelta(),.05);
  if(!visible&&!renderer.xr.isPresenting)return;
  if(!renderer.xr.isPresenting){
-   if(currentMode==='walk'){
-     const f=new THREE.Vector3(-Math.sin(yaw),0,-Math.cos(yaw));const right=new THREE.Vector3(-f.z,0,f.x);
+   if(currentMode==='sky'||currentMode==='walk'){
+     const forward=new THREE.Vector3(-Math.sin(yaw),0,-Math.cos(yaw)),right=new THREE.Vector3(-forward.z,0,forward.x);
+     let dx=0,dz=0;
+     if(keys.has('KeyW')||keys.has('ArrowUp')){dx+=forward.x;dz+=forward.z}
+     if(keys.has('KeyS')||keys.has('ArrowDown')){dx-=forward.x;dz-=forward.z}
+     if(keys.has('KeyD')||keys.has('ArrowRight')){dx+=right.x;dz+=right.z}
+     if(keys.has('KeyA')||keys.has('ArrowLeft')){dx-=right.x;dz-=right.z}
+     const len=Math.hypot(dx,dz);if(len){dx/=len;dz/=len}
      const speed=(keys.has('ShiftLeft')||keys.has('ShiftRight')?9:3.4)*delta;
-     if(keys.has('KeyW')||keys.has('ArrowUp'))camera.position.addScaledVector(f,speed);
-     if(keys.has('KeyS')||keys.has('ArrowDown'))camera.position.addScaledVector(f,-speed);
-     if(keys.has('KeyD')||keys.has('ArrowRight'))camera.position.addScaledVector(right,speed);
-     if(keys.has('KeyA')||keys.has('ArrowLeft'))camera.position.addScaledVector(right,-speed);
-     // Free vertical exploration for elevated floors, stairwells and roof levels.
-     if(keys.has('Space')||keys.has('KeyE')||keys.has('KeyR'))camera.position.y+=speed;
-     if(keys.has('KeyC')||keys.has('KeyQ')||keys.has('KeyF'))camera.position.y-=speed;
-     const ext=modelBounds.clone().expandByScalar(15);
-     camera.position.x=THREE.MathUtils.clamp(camera.position.x,ext.min.x,ext.max.x);
-     camera.position.z=THREE.MathUtils.clamp(camera.position.z,ext.min.z,ext.max.z);
-     camera.position.y=THREE.MathUtils.clamp(camera.position.y,Math.max(1.5,modelBounds.min.y+1.5),modelBounds.max.y+12);
+     if(currentMode==='walk'&&collisionReady)moveWalk(dx*speed,dz*speed,delta);
+     else if(currentMode==='sky'){
+       camera.position.x+=dx*speed;camera.position.z+=dz*speed;
+       if(keys.has('Space')||keys.has('KeyE')||keys.has('KeyR'))camera.position.y+=speed;
+       if(keys.has('KeyC')||keys.has('KeyQ')||keys.has('KeyF'))camera.position.y-=speed;
+       const bounds=modelBounds.clone().expandByScalar(25);
+       camera.position.x=THREE.MathUtils.clamp(camera.position.x,bounds.min.x,bounds.max.x);
+       camera.position.z=THREE.MathUtils.clamp(camera.position.z,bounds.min.z,bounds.max.z);
+       camera.position.y=THREE.MathUtils.clamp(camera.position.y,modelBounds.min.y+EYE,modelBounds.max.y+60);
+     }
    }else orbit.update();
  }
  renderer.render(scene,camera);
 });
-mount.addEventListener('click',()=>{if(currentMode==='walk'&&!renderer.xr.isPresenting&&document.pointerLockElement!==renderer.domElement){renderer.domElement.requestPointerLock?.().catch(()=>{})}});
-document.addEventListener('mousemove',e=>{if(document.pointerLockElement!==renderer.domElement||currentMode!=='walk')return;yaw-=e.movementX*.0021;pitch=Math.max(-1.42,Math.min(1.42,pitch-e.movementY*.0021));camera.rotation.set(pitch,yaw,0)});
-window.addEventListener('keydown',e=>{if(e.target&&/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName))return;keys.add(e.code);if(currentMode==='walk'&&['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code))e.preventDefault()});
+mount.addEventListener('click',()=>{if((currentMode==='walk'||currentMode==='sky')&&!renderer.xr.isPresenting&&document.pointerLockElement!==renderer.domElement){renderer.domElement.requestPointerLock?.().catch(()=>{})}});
+document.addEventListener('mousemove',e=>{if(document.pointerLockElement!==renderer.domElement||!['walk','sky'].includes(currentMode))return;yaw-=e.movementX*.0021;pitch=Math.max(-1.42,Math.min(1.42,pitch-e.movementY*.0021));camera.rotation.set(pitch,yaw,0)});
+window.addEventListener('keydown',e=>{if(e.target&&/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName))return;keys.add(e.code);if((currentMode==='walk'||currentMode==='sky')&&['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code))e.preventDefault()});
 window.addEventListener('keyup',e=>keys.delete(e.code));window.addEventListener('blur',()=>keys.clear());
 const loader=new GLTFLoader();
 function load(file){
@@ -98,7 +200,8 @@ function load(file){
  splash.hidden=false;progress.hidden=false;$('loadModelBtn').disabled=true;$('loadModelBtn').textContent='Preparing 3D experience…';
  const isBlob=file instanceof File;const url=isBlob?URL.createObjectURL(file):file;
  loader.load(url,gltf=>{
-  if(model){scene.remove(model);model.traverse(obj=>{if(obj.isMesh)obj.geometry?.dispose?.()})}
+  if(model){scene.remove(model);model.traverse(obj=>{if(obj.isMesh){obj.geometry?.disposeBoundsTree?.();obj.geometry?.dispose?.()}})}
+   collisionMeshes=[];collisionReady=false;collisionPromise=null;fallSpeed=0;
   model=gltf.scene;
   let meshCount=0;model.traverse(obj=>{if(obj.isMesh){meshCount++;obj.castShadow=false;obj.receiveShadow=false;obj.frustumCulled=true}});
   // Source model is pre-batched, positioned at ground level, and measured in meters.
@@ -108,7 +211,7 @@ function load(file){
   if(modelSize.x>2000||modelSize.z>2000){const scale=95/Math.max(modelSize.x,modelSize.z);model.scale.setScalar(scale);modelBounds.setFromObject(model)}
   scene.add(model);
   modelLoaded=true;isLoading=false;tag.textContent='ACTUAL MARKET MODEL LOADED';splash.hidden=true;progress.hidden=true;grid.visible=false;ground.visible=true;
-  setMode('orbit');status(`Loaded successfully · ${meshCount} draw groups · Orbit / Walkthrough / Plan / VR available`);
+  setMode('orbit');status(`Loaded successfully · ${meshCount} draw groups · Orbit / Sky / Walk / Plan / VR available`);
   if(isBlob)URL.revokeObjectURL(url);
  },evt=>{if(evt.lengthComputable){const pct=Math.min(98,Math.round(evt.loaded/evt.total*100));bar.style.width=pct+'%';progText.textContent=`Downloading 3D architecture · ${pct}%`;
  }else{progText.textContent=`Downloading model · ${(evt.loaded/1024/1024).toFixed(0)} MB received`}
