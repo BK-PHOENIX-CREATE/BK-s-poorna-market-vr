@@ -26,6 +26,8 @@ renderer.xr.enabled=true;
 renderer.xr.setReferenceSpaceType('local-floor');
 renderer.shadowMap.enabled=true;
 renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+// The market and sun are static: render the shadow atlas only when needed.
+renderer.shadowMap.autoUpdate=false;
 mount.appendChild(renderer.domElement);
 const orbit=new OrbitControls(camera,renderer.domElement);
 orbit.enableDamping=true;orbit.dampingFactor=.07;orbit.maxPolarAngle=Math.PI*.49;orbit.minDistance=3;orbit.maxDistance=220;
@@ -36,40 +38,54 @@ const ambient=new THREE.AmbientLight(0xffffff,.38);scene.add(ambient);
 const sun=new THREE.DirectionalLight(0xfff0de,3.1);
 sun.position.set(-45,80,42);
 sun.castShadow=true;
-sun.shadow.mapSize.set(1024,1024);
+sun.shadow.mapSize.set(2048,2048);
 sun.shadow.camera.near=.5;sun.shadow.camera.far=450;
-sun.shadow.bias=-.00012;sun.shadow.normalBias=.035;
-sun.shadow.radius=2.1;
+sun.shadow.bias=-.00018;sun.shadow.normalBias=.025;
+sun.shadow.radius=2.6;
 scene.add(sun);scene.add(sun.target);
 const opposite=new THREE.DirectionalLight(0xd6e6ff,.70);opposite.position.set(35,30,-35);scene.add(opposite);
 const ground=new THREE.Mesh(new THREE.PlaneGeometry(520,520),new THREE.MeshStandardMaterial({color:0xd7d6c7,roughness:1}));ground.rotation.x=-Math.PI/2;ground.position.y=-.08;ground.receiveShadow=true;scene.add(ground);
-/* Architectural-quality renderer. Geometry, walk physics and XR controls
-   remain unchanged. Desktop gets soft sunlight shadows, while standalone
-   Quest switches shadow casting OFF to preserve head-tracked performance.
-   Built-in GLB texture maps are preserved; no fake baked materials. */
+/* Architectural sun/shadows across desktop Walk and Quest 3.
+   Model geometry and the tested VR locomotion physics remain untouched.
+   Static sun shadows are cached instead of re-rendered at headset frame rate. */
 let generatedEnvironment=null,environmentTarget=null;
 const renderingProfile={mode:'desktop',environmentReady:false,shadowEnabled:true};
+// Shadow maps must be rebuilt when the light or quality profile changes.
+// Lower resolution and a one-time shadow render keep Quest 3 performant.
+function requestSunShadowUpdate(){
+ if(renderer.shadowMap.enabled)renderer.shadowMap.needsUpdate=true;
+}
 function setRenderingProfile(next){
  const immersive=next==='vr';
  const portable=next==='mobile';
+ const wasProfile=renderingProfile.mode;
  renderingProfile.mode=next;
- renderingProfile.shadowEnabled=!immersive&&!portable;
- renderer.shadowMap.enabled=renderingProfile.shadowEnabled;
- sun.castShadow=renderingProfile.shadowEnabled;
- // XR owns its recommended per-eye framebuffer. Never resize mid-session.
+ renderingProfile.shadowEnabled=true;
+ renderer.shadowMap.enabled=true;
+ sun.castShadow=true;
+ // WebXR manages its own framebuffer dimensions: never resize during VR.
  if(!immersive)renderer.setPixelRatio(Math.min(devicePixelRatio,portable?1.25:1.65));
+ const resolution=immersive?768:(portable?1024:2048);
+ if(sun.shadow.mapSize.x!==resolution||sun.shadow.mapSize.y!==resolution){
+  sun.shadow.mapSize.set(resolution,resolution);
+  if(sun.shadow.map){sun.shadow.map.dispose();sun.shadow.map=null;}
+ }
+ sun.shadow.radius=immersive?1.6:2.6;
  if(immersive){
-  renderer.toneMappingExposure=1.30;
-  scene.environmentIntensity=.30;
+  renderer.toneMappingExposure=1.32;
+  scene.environmentIntensity=.32;
  }else{
   renderer.toneMappingExposure=1.35;
-  scene.environmentIntensity=portable?.30:.46;
+  scene.environmentIntensity=portable?.35:.46;
  }
  if(model)model.traverse(o=>{
   if(!o.isMesh)return;
-  o.castShadow=renderingProfile.shadowEnabled&&o.userData.architecturalShadowCaster!==false;
-  o.receiveShadow=renderingProfile.shadowEnabled;
+  o.castShadow=o.userData.architecturalShadowCaster!==false;
+  o.receiveShadow=true;
  });
+ // Sun, mesh and ground are static: cache the light-depth pass after it
+ // renders once, rather than generating it on every headset frame.
+ requestSunShadowUpdate();
 }
 function setupArchitecturalMaterials(root){
  const maxAnisotropy=Math.min(8,renderer.capabilities.getMaxAnisotropy());
@@ -107,7 +123,8 @@ function configureArchitecturalSun(){
  const center=modelBounds.getCenter(new THREE.Vector3());
  sun.target.position.copy(center);
  sun.target.updateMatrixWorld(true);
- const radius=Math.min(190,Math.max(size.x,size.z)*.73+9);
+ // Keep both the building and its cast shadows within the light's ortho frustum.
+ const radius=Math.min(190,Math.max(size.x,size.z)*.72+18);
  sun.shadow.camera.left=-radius;
  sun.shadow.camera.right=radius;
  sun.shadow.camera.top=radius;
@@ -115,6 +132,7 @@ function configureArchitecturalSun(){
  sun.shadow.camera.far=Math.max(270,size.y+210);
  sun.shadow.camera.updateProjectionMatrix();
  sun.shadow.needsUpdate=true;
+ requestSunShadowUpdate();
 }
 async function prepareEnvironmentLighting(){
  if(generatedEnvironment)return;
@@ -442,6 +460,7 @@ function load(file){
   configureArchitecturalSun();
   setRenderingProfile(renderer.xr.isPresenting?'vr':(isPortableDevice?'mobile':'desktop'));
   void prepareEnvironmentLighting();
+  requestSunShadowUpdate();
   modelLoaded=true;isLoading=false;tag.textContent='ACTUAL MARKET MODEL LOADED';splash.hidden=true;progress.hidden=true;grid.visible=false;ground.visible=true;
   setMode('orbit');writeStartToUI();buildWalkPhysics().catch(error=>console.error('Preparing VR walking surfaces',error));window.poornaExhibition?.modelReady();window.poornaNavigation?.modelReady();status(`Loaded successfully · ${meshCount} draw groups · Orbit / Sky / Walk / Plan / VR available`);
   if(isBlob)URL.revokeObjectURL(url);
