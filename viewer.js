@@ -347,9 +347,33 @@ const raycaster=new THREE.Raycaster(),rot=new THREE.Matrix4();
 const teleportSurface=new THREE.Mesh(new THREE.PlaneGeometry(300,300),new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false,side:THREE.DoubleSide}));
 teleportSurface.rotation.x=-Math.PI/2;teleportSurface.position.y=.03;scene.add(teleportSurface);
 function moveToController(controller){
- rot.identity().extractRotation(controller.matrixWorld);raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);raycaster.ray.direction.set(0,0,-1).applyMatrix4(rot);
- const hits=raycaster.intersectObject(teleportSurface);if(!hits.length)return;
- const point=hits[0].point;const head=renderer.xr.getCamera(camera);const local=head.getWorldPosition(new THREE.Vector3());rig.position.x+=point.x-local.x;rig.position.z+=point.z-local.z;
+ if(!collisionReady){status('Preparing floor collisions for safe VR teleportation…');return}
+ controller.updateMatrixWorld(true);
+ rot.identity().extractRotation(controller.matrixWorld);
+ raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+ raycaster.ray.direction.set(0,0,-1).applyMatrix4(rot);
+ raycaster.near=0;raycaster.far=80;raycaster.firstHitOnly=false;
+ // Prefer real walkable architecture (ramps, landings and elevated levels).
+ // Do not teleport to a vertical wall or below a surface.
+ const hits=raycaster.intersectObjects(collisionMeshes,false);
+ let target=null;
+ for(const hit of hits){
+   if(!hit.face)continue;
+   xrWallNormal.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
+   if(xrWallNormal.y>=SLOPE){target=hit.point;break}
+ }
+ if(!target){
+   const groundHits=raycaster.intersectObject(teleportSurface);
+   if(groundHits.length)target=groundHits[0].point;
+ }
+ if(!target)return;
+ const head=renderer.xr.getCamera(camera);
+ head.getWorldPosition(xrHeadA);
+ rig.position.x+=target.x-xrHeadA.x;
+ rig.position.z+=target.z-xrHeadA.z;
+ const floor=floorAt(target.x,target.z,target.y,STEP,1.8);
+ rig.position.y=floor??target.y;
+ xrFallVelocity=0;
 }
 for(let i=0;i<2;i++){
  const controller=renderer.xr.getController(i);rig.add(controller);
