@@ -187,6 +187,7 @@ renderer.setAnimationLoop(()=>{
      }
    }else orbit.update();
  }
+ if(renderer.xr.isPresenting)updateXRLocomotion(delta);
  window.poornaExhibition?.tick(delta);
  window.poornaNavigation?.tick(delta);
  if(!window.poornaNavigation?.renderStereo?.())renderer.render(scene,camera);
@@ -231,6 +232,48 @@ $('closeHelpBtn').addEventListener('click',()=>$('viewerHelp').hidden=true);
 $('fullscreenBtn').addEventListener('click',async()=>{const shell=$('viewerShell');if(document.fullscreenElement){await document.exitFullscreen?.();shell.classList.remove('is-fullscreen')}else{if(shell.requestFullscreen){try{await shell.requestFullscreen()}catch{shell.classList.add('is-fullscreen')}}else shell.classList.add('is-fullscreen')}resize()});
 document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement)$('viewerShell').classList.remove('is-fullscreen');resize()});
 
+// Meta Quest 3 joystick locomotion: Touch left stick walks, right stick snap-turns.
+const xrFw=new THREE.Vector3(),xrRt=new THREE.Vector3(),xrQ=new THREE.Quaternion();
+const xrHeadA=new THREE.Vector3(),xrHeadB=new THREE.Vector3(),xrUp=new THREE.Vector3(0,1,0);
+let xrTurnArmed=true,xrTurnCooldown=0;
+function getXRStick(source){
+ const a=source?.gamepad?.axes||[];
+ const x=a.length>=4?(a[2]||0):(a[0]||0),y=a.length>=4?(a[3]||0):(a[1]||0);
+ return {x:Math.abs(x)>.18?x:0,y:Math.abs(y)>.18?y:0};
+}
+function updateXRLocomotion(dt){
+ if(!renderer.xr.isPresenting)return;
+ const sources=renderer.xr.getSession()?.inputSources||[];
+ let left=null,right=null;
+ for(const src of sources){if(src.handedness==='left')left=src;else if(src.handedness==='right')right=src}
+ const walk=getXRStick(left),turn=getXRStick(right);
+ const xrCamera=renderer.xr.getCamera(camera);
+ const head=xrCamera.cameras?.[0]||xrCamera;
+ if(!head)return;
+ head.getWorldQuaternion(xrQ);
+ xrFw.set(0,0,-1).applyQuaternion(xrQ).setY(0).normalize();
+ if(xrFw.lengthSq()<1e-5)xrFw.set(0,0,-1);
+ xrRt.crossVectors(xrFw,xrUp).normalize();
+ const magnitude=Math.min(1,Math.hypot(walk.x,walk.y));
+ if(magnitude>.18){
+  const speed=2.8*dt*(magnitude-.18)/(.82*magnitude);
+  rig.position.addScaledVector(xrFw,-walk.y*speed);
+  rig.position.addScaledVector(xrRt,walk.x*speed);
+  rig.position.x=THREE.MathUtils.clamp(rig.position.x,modelBounds.min.x-15,modelBounds.max.x+15);
+  rig.position.z=THREE.MathUtils.clamp(rig.position.z,modelBounds.min.z-15,modelBounds.max.z+15);
+ }
+ xrTurnCooldown=Math.max(0,xrTurnCooldown-dt);
+ if(Math.abs(turn.x)<.35)xrTurnArmed=true;
+ if(Math.abs(turn.x)>.75&&xrTurnArmed&&xrTurnCooldown===0){
+  head.getWorldPosition(xrHeadA);
+  rig.rotation.y-=Math.sign(turn.x)*Math.PI/6;
+  rig.updateMatrixWorld(true);
+  head.getWorldPosition(xrHeadB);
+  rig.position.x+=xrHeadA.x-xrHeadB.x;rig.position.z+=xrHeadA.z-xrHeadB.z;
+  xrTurnArmed=false;xrTurnCooldown=.28;
+ }
+}
+
 // Immersive-VR entry and controller teleportation; available only on supported secure origins.
 const hiddenVR=VRButton.createButton(renderer,{optionalFeatures:['local-floor','bounded-floor','hand-tracking']});
 hiddenVR.style.display='none';hiddenVR.setAttribute('aria-hidden','true');document.body.appendChild(hiddenVR);
@@ -247,7 +290,7 @@ for(let i=0;i<2;i++){
  const ray=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3(0,0,-1)]),new THREE.LineBasicMaterial({color:0xdac28e}));ray.scale.z=8;controller.add(ray);
  controller.addEventListener('selectstart',()=>{if(renderer.xr.isPresenting)moveToController(controller)})
 }
-renderer.xr.addEventListener('sessionstart',()=>{window.poornaNavigation?.vrStart();window.poornaExhibition?.stop();rig.position.set(0,0,modelBounds.max.z+4);status('Immersive VR active. Point at the floor and press controller trigger to teleport.');tag.textContent='IMMERSIVE VR ACTIVE'});
+renderer.xr.addEventListener('sessionstart',()=>{xrTurnArmed=true;xrTurnCooldown=0;rig.rotation.y=0;window.poornaNavigation?.vrStart();window.poornaExhibition?.stop();rig.position.set(0,0,modelBounds.max.z+4);status('Quest 3: left joystick walks · right joystick snap-turns · trigger teleports.');tag.textContent='IMMERSIVE VR ACTIVE'});
 renderer.xr.addEventListener('sessionend',()=>{window.poornaNavigation?.vrEnd();rig.position.set(0,0,0);tag.textContent=modelLoaded?'ACTUAL MARKET MODEL LOADED':'MODEL READY TO LOAD';setMode('orbit');status('Exited immersive VR mode')});
 $('vrEnterBtn').addEventListener('click',async()=>{
  if(!modelLoaded){notice('Load the actual market model before entering VR.');return}
