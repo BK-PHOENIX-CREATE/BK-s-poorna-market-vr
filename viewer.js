@@ -10,27 +10,131 @@ const $=(id)=>document.getElementById(id);
 const mount=$('canvasMount');
 if (!mount) throw new Error('Missing model canvas');
 const scene=new THREE.Scene();
-scene.background=new THREE.Color(0xd6d9cd);
-scene.fog=new THREE.Fog(0xd6d9cd,170,430);
+scene.background=new THREE.Color(0xd6e4ed);
+scene.fog=new THREE.Fog(0xd6e4ed,190,520);
 const camera=new THREE.PerspectiveCamera(56,1,.08,800);
 const rig=new THREE.Group();rig.name='VR Player';scene.add(rig);rig.add(camera);
 const renderer=new THREE.WebGLRenderer({antialias:true,alpha:false,powerPreference:'high-performance'});
-renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,1.6));
+// Resolution profiles: immersive XR uses the headset's recommended eye buffer.
+const devicePixelRatio=window.devicePixelRatio||1;
+const isPortableDevice=window.matchMedia?.('(pointer: coarse)')?.matches||false;
+renderer.setPixelRatio(Math.min(devicePixelRatio,isPortableDevice?1.25:1.65));
 renderer.outputColorSpace=THREE.SRGBColorSpace;
 renderer.toneMapping=THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure=1.45;
 renderer.xr.enabled=true;
 renderer.xr.setReferenceSpaceType('local-floor');
-renderer.shadowMap.enabled=false;
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
 mount.appendChild(renderer.domElement);
 const orbit=new OrbitControls(camera,renderer.domElement);
 orbit.enableDamping=true;orbit.dampingFactor=.07;orbit.maxPolarAngle=Math.PI*.49;orbit.minDistance=3;orbit.maxDistance=220;
 orbit.target.set(0,6,0);
-scene.add(new THREE.HemisphereLight(0xf8faf2,0x829383,3));
-const ambient=new THREE.AmbientLight(0xffffff,.7);scene.add(ambient);
-const sun=new THREE.DirectionalLight(0xffe8c7,3.5);sun.position.set(-35,75,30);scene.add(sun);
-const opposite=new THREE.DirectionalLight(0xd9e9ff,1.1);opposite.position.set(35,30,-35);scene.add(opposite);
+const skylight=new THREE.HemisphereLight(0xf2f7ff,0x777369,1.55);
+scene.add(skylight);
+const ambient=new THREE.AmbientLight(0xffffff,.38);scene.add(ambient);
+const sun=new THREE.DirectionalLight(0xfff0de,3.1);
+sun.position.set(-45,80,42);
+sun.castShadow=true;
+sun.shadow.mapSize.set(1024,1024);
+sun.shadow.camera.near=.5;sun.shadow.camera.far=450;
+sun.shadow.bias=-.00012;sun.shadow.normalBias=.035;
+sun.shadow.radius=2.1;
+scene.add(sun);scene.add(sun.target);
+const opposite=new THREE.DirectionalLight(0xd6e6ff,.70);opposite.position.set(35,30,-35);scene.add(opposite);
 const ground=new THREE.Mesh(new THREE.PlaneGeometry(520,520),new THREE.MeshStandardMaterial({color:0xd7d6c7,roughness:1}));ground.rotation.x=-Math.PI/2;ground.position.y=-.08;ground.receiveShadow=true;scene.add(ground);
+/* Architectural-quality renderer. Geometry, walk physics and XR controls
+   remain unchanged. Desktop gets soft sunlight shadows, while standalone
+   Quest switches shadow casting OFF to preserve head-tracked performance.
+   Built-in GLB texture maps are preserved; no fake baked materials. */
+let generatedEnvironment=null,environmentTarget=null;
+const renderingProfile={mode:'desktop',environmentReady:false,shadowEnabled:true};
+function setRenderingProfile(next){
+ const immersive=next==='vr';
+ const portable=next==='mobile';
+ renderingProfile.mode=next;
+ renderingProfile.shadowEnabled=!immersive&&!portable;
+ renderer.shadowMap.enabled=renderingProfile.shadowEnabled;
+ sun.castShadow=renderingProfile.shadowEnabled;
+ renderer.setPixelRatio(immersive?1:Math.min(devicePixelRatio,portable?1.25:1.65));
+ if(immersive){
+  renderer.toneMappingExposure=1.30;
+  scene.environmentIntensity=.30;
+ }else{
+  renderer.toneMappingExposure=1.35;
+  scene.environmentIntensity=portable?.30:.46;
+ }
+ if(model)model.traverse(o=>{
+  if(!o.isMesh)return;
+  o.castShadow=renderingProfile.shadowEnabled&&o.userData.architecturalShadowCaster!==false;
+  o.receiveShadow=renderingProfile.shadowEnabled;
+ });
+}
+function setupArchitecturalMaterials(root){
+ const maxAnisotropy=Math.min(8,renderer.capabilities.getMaxAnisotropy());
+ const visited=new Set();
+ root.traverse(mesh=>{
+  if(!mesh.isMesh)return;
+  const materials=Array.isArray(mesh.material)?mesh.material:[mesh.material];
+  for(const mat of materials){
+   if(!mat||visited.has(mat))continue;
+   visited.add(mat);
+   if(mat.isMeshStandardMaterial||mat.isMeshPhysicalMaterial){
+    // Maintain authored albedo, normal, metalness and roughness maps.
+    // Avoid plastic-looking over-gloss on generic masonry and concrete.
+    const name=(mat.name||'').toLowerCase();
+    if(/brick|concrete|cement|plaster|stone|terracotta|tile|masonry/.test(name)){
+     mat.roughness=Math.max(.78,mat.roughness);
+     mat.metalness=Math.min(.06,mat.metalness);
+    }
+    if(/glass|glazing|window/.test(name)){
+     mat.roughness=Math.min(.32,Math.max(.08,mat.roughness));
+    }
+   }
+   for(const key of ['map','normalMap','roughnessMap','metalnessMap','aoMap']){
+    const tex=mat[key];
+    if(tex){tex.anisotropy=maxAnisotropy;tex.needsUpdate=true}
+   }
+  }
+  // Transparent panels should not cast solid-looking architectural shadows.
+  mesh.userData.architecturalShadowCaster=materials.some(mat=>mat&&mat.opacity>=.95&&!mat.transparent);
+ });
+}
+function configureArchitecturalSun(){
+ if(!model)return;
+ const size=modelBounds.getSize(new THREE.Vector3());
+ const center=modelBounds.getCenter(new THREE.Vector3());
+ sun.target.position.copy(center);
+ sun.target.updateMatrixWorld(true);
+ const radius=Math.min(190,Math.max(size.x,size.z)*.73+9);
+ sun.shadow.camera.left=-radius;
+ sun.shadow.camera.right=radius;
+ sun.shadow.camera.top=radius;
+ sun.shadow.camera.bottom=-radius;
+ sun.shadow.camera.far=Math.max(270,size.y+210);
+ sun.shadow.camera.updateProjectionMatrix();
+ sun.shadow.needsUpdate=true;
+}
+async function prepareEnvironmentLighting(){
+ if(generatedEnvironment)return;
+ try{
+  const {RoomEnvironment}=await import('three/addons/environments/RoomEnvironment.js');
+  const room=new RoomEnvironment();
+  const pmrem=new THREE.PMREMGenerator(renderer);
+  pmrem.compileEquirectangularShader();
+  const target=pmrem.fromScene(room,.06);
+  generatedEnvironment=target.texture;
+  environmentTarget=target;
+  scene.environment=generatedEnvironment;
+  scene.environmentIntensity=renderer.xr.isPresenting?.30:.46;
+  renderingProfile.environmentReady=true;
+  room.dispose();pmrem.dispose();
+ }catch(error){
+  console.warn('Optional reflective environment unavailable; direct lighting remains active',error);
+ }
+}
+setRenderingProfile(isPortableDevice?'mobile':'desktop');
+
 const grid=new THREE.GridHelper(260,52,0xa4aea3,0xc7d1c6);grid.position.y=-.07;grid.material.opacity=.22;grid.material.transparent=true;scene.add(grid);
 let model=null,modelBounds=new THREE.Box3(new THREE.Vector3(-46,0,-38),new THREE.Vector3(46,20,38));
 let modelLoaded=false,isLoading=false,currentMode='orbit',visible=true,lockRequested=false;
@@ -327,13 +431,17 @@ function load(file){
   if(model){scene.remove(model);model.traverse(obj=>{if(obj.isMesh){obj.geometry?.disposeBoundsTree?.();obj.geometry?.dispose?.()}})}
    collisionMeshes.forEach(mesh=>mesh.material?.dispose?.());collisionMeshes=[];collisionReady=false;collisionPromise=null;collisionFailure='';fallSpeed=0;
   model=gltf.scene;
-  let meshCount=0;model.traverse(obj=>{if(obj.isMesh){meshCount++;obj.castShadow=false;obj.receiveShadow=false;obj.frustumCulled=true}});
+  let meshCount=0;model.traverse(obj=>{if(obj.isMesh){meshCount++;obj.frustumCulled=true}});
+  setupArchitecturalMaterials(model);
   // Source model is pre-batched, positioned at ground level, and measured in meters.
   modelBounds=new THREE.Box3().setFromObject(model);
   if(modelBounds.isEmpty()||!Number.isFinite(modelBounds.min.x))throw new Error('Invalid model bounds');
   const modelSize=modelBounds.getSize(new THREE.Vector3());
   if(modelSize.x>2000||modelSize.z>2000){const scale=95/Math.max(modelSize.x,modelSize.z);model.scale.setScalar(scale);modelBounds.setFromObject(model)}
   scene.add(model);
+  configureArchitecturalSun();
+  setRenderingProfile(renderer.xr.isPresenting?'vr':(isPortableDevice?'mobile':'desktop'));
+  void prepareEnvironmentLighting();
   modelLoaded=true;isLoading=false;tag.textContent='ACTUAL MARKET MODEL LOADED';splash.hidden=true;progress.hidden=true;grid.visible=false;ground.visible=true;
   setMode('orbit');writeStartToUI();buildWalkPhysics().catch(error=>console.error('Preparing VR walking surfaces',error));window.poornaExhibition?.modelReady();window.poornaNavigation?.modelReady();status(`Loaded successfully · ${meshCount} draw groups · Orbit / Sky / Walk / Plan / VR available`);
   if(isBlob)URL.revokeObjectURL(url);
@@ -554,8 +662,8 @@ for(let i=0;i<2;i++){
  const ray=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3(0,0,-1)]),new THREE.LineBasicMaterial({color:0xdac28e}));ray.scale.z=8;controller.add(ray);
  controller.addEventListener('selectstart',()=>{if(renderer.xr.isPresenting&&!selectVRBack(controller))moveToController(controller)})
 }
-renderer.xr.addEventListener('sessionstart',()=>{xrBackButton.visible=true;xrBackButtonHeld=false;xrTurnVelocity=0;vrWalkState.velocity=0;xrPoseMissing=0;xrSpawnPending=true;rig.rotation.y=0;buildWalkPhysics().then(ok=>{if(ok&&renderer.xr.isPresenting)status('Quest 3 capsule collision ready: walk on ramps & floors; hold right stick to turn');});window.poornaNavigation?.vrStart();window.poornaExhibition?.stop();rig.position.copy(entranceSpawn().position);status('Quest 3: left joystick walks · right joystick smooth turning · trigger teleports.');tag.textContent='IMMERSIVE VR ACTIVE'});
-renderer.xr.addEventListener('sessionend',()=>{xrBackButton.visible=false;xrBackButtonHeld=false;window.poornaNavigation?.vrEnd();rig.position.set(0,0,0);tag.textContent=modelLoaded?'ACTUAL MARKET MODEL LOADED':'MODEL READY TO LOAD';setMode('orbit');status('Exited immersive VR mode')});
+renderer.xr.addEventListener('sessionstart',()=>{setRenderingProfile('vr');xrBackButton.visible=true;xrBackButtonHeld=false;xrTurnVelocity=0;vrWalkState.velocity=0;xrPoseMissing=0;xrSpawnPending=true;rig.rotation.y=0;buildWalkPhysics().then(ok=>{if(ok&&renderer.xr.isPresenting)status('Quest 3 capsule collision ready: walk on ramps & floors; hold right stick to turn');});window.poornaNavigation?.vrStart();window.poornaExhibition?.stop();rig.position.copy(entranceSpawn().position);status('Quest 3: left joystick walks · right joystick smooth turning · trigger teleports.');tag.textContent='IMMERSIVE VR ACTIVE'});
+renderer.xr.addEventListener('sessionend',()=>{setRenderingProfile(isPortableDevice?'mobile':'desktop');xrBackButton.visible=false;xrBackButtonHeld=false;window.poornaNavigation?.vrEnd();rig.position.set(0,0,0);tag.textContent=modelLoaded?'ACTUAL MARKET MODEL LOADED':'MODEL READY TO LOAD';setMode('orbit');status('Exited immersive VR mode')});
 $('vrEnterBtn').addEventListener('click',async()=>{
  if(!modelLoaded){notice('Load the actual market model before entering VR.');return}
  if(!window.isSecureContext){notice('Immersive VR requires HTTPS. Deploy the site to a secure URL.');return}
@@ -563,4 +671,4 @@ $('vrEnterBtn').addEventListener('click',async()=>{
  try{const supported=await navigator.xr.isSessionSupported('immersive-vr');if(!supported){notice('Immersive VR is not supported on this device or browser. Desktop walkthrough still works.');return}hiddenVR.click()}
  catch(error){console.error(error);notice('Could not start the VR session. Check headset browser permissions.')}
 });
-window.addEventListener('beforeunload',()=>{renderer.setAnimationLoop(null);renderer.dispose();ro.disconnect();io.disconnect()});
+window.addEventListener('beforeunload',()=>{renderer.setAnimationLoop(null);environmentTarget?.dispose();renderer.dispose();ro.disconnect();io.disconnect()});
