@@ -35,7 +35,7 @@ const grid=new THREE.GridHelper(260,52,0xa4aea3,0xc7d1c6);grid.position.y=-.07;g
 let model=null,modelBounds=new THREE.Box3(new THREE.Vector3(-46,0,-38),new THREE.Vector3(46,20,38));
 let modelLoaded=false,isLoading=false,currentMode='orbit',visible=true,lockRequested=false;
 const EYE=1.7, STEP=.55, SLOPE=.55, RADIUS=.28;
-let collisionMeshes=[],collisionReady=false,collisionPromise=null,fallSpeed=0;
+let collisionMeshes=[],collisionReady=false,collisionPromise=null,collisionFailure='',fallSpeed=0;
 const downRay=new THREE.Raycaster(),wallRay=new THREE.Raycaster(),DOWN=new THREE.Vector3(0,-1,0),NORMAL=new THREE.Vector3();
 const keys=new Set();let yaw=0,pitch=0;
 const text=$('viewerStatus'),tag=$('modelState'),modeLabel=$('viewModeName');
@@ -115,8 +115,8 @@ async function buildWalkPhysics(){
      collisionMeshes.push(collider);
      if(i%3===0){status('Indexing building surfaces '+(i+1)+' / '+meshes.length);await new Promise(resolve=>setTimeout(resolve,0))}
    }
-   collisionReady=true;status('Real floor collisions ready.');return true;
-  }catch(e){console.error('Collision geometry failed',e);collisionMeshes=[];status('Walk collisions failed to initialize. Sky Mode is available.');return false}
+   collisionReady=true;collisionFailure='';status('Real floor collisions ready.');return true;
+  }catch(e){console.error('Collision geometry failed',e);collisionFailure=String(e?.message||e);collisionMeshes.forEach(mesh=>mesh.material?.dispose?.());collisionMeshes=[];status('Walk collisions failed: '+collisionFailure);return false}
  })();
  const ok=await collisionPromise;if(!ok)collisionPromise=null;return ok;
 }
@@ -236,7 +236,7 @@ function load(file){
  const isBlob=file instanceof File;const url=isBlob?URL.createObjectURL(file):file;
  loader.load(url,gltf=>{
   if(model){scene.remove(model);model.traverse(obj=>{if(obj.isMesh){obj.geometry?.disposeBoundsTree?.();obj.geometry?.dispose?.()}})}
-   collisionMeshes.forEach(mesh=>mesh.material?.dispose?.());collisionMeshes=[];collisionReady=false;collisionPromise=null;fallSpeed=0;
+   collisionMeshes.forEach(mesh=>mesh.material?.dispose?.());collisionMeshes=[];collisionReady=false;collisionPromise=null;collisionFailure='';fallSpeed=0;
   model=gltf.scene;
   let meshCount=0;model.traverse(obj=>{if(obj.isMesh){meshCount++;obj.castShadow=false;obj.receiveShadow=false;obj.frustumCulled=true}});
   // Source model is pre-batched, positioned at ground level, and measured in meters.
@@ -265,6 +265,43 @@ document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement
 
 // Quest 3: left thumbstick is relative to headset yaw; right thumbstick
 // turns continuously while held. Ground movement is shared with desktop Walk.
+// Quest diagnostics on the controller: shows whether physics is actually active,
+// the ground ray's reading, and the tracked player floor elevation.
+const xrInfoCanvas=document.createElement('canvas');xrInfoCanvas.width=512;xrInfoCanvas.height=256;
+const xrInfoCtx=xrInfoCanvas.getContext('2d'),xrInfoTexture=new THREE.CanvasTexture(xrInfoCanvas);
+xrInfoTexture.colorSpace=THREE.SRGBColorSpace;
+const xrInfoMat=new THREE.MeshBasicMaterial({map:xrInfoTexture,side:THREE.DoubleSide,depthTest:false});
+const xrInfoPanel=new THREE.Mesh(new THREE.PlaneGeometry(.25,.125),xrInfoMat);
+xrInfoPanel.position.set(0,.17,-.15);xrInfoPanel.rotation.x=-.35;xrInfoPanel.visible=false;
+let xrInfoTimer=0,xrLastGroundHit=null;
+function updateXRDiagnostics(dt,x,z,feet){
+ if(!renderer.xr.isPresenting)return;
+ xrInfoTimer+=dt;if(xrInfoTimer<.35)return;xrInfoTimer=0;
+ let hitCount=0,hitY=null;
+ if(collisionReady){
+  downRay.set(new THREE.Vector3(x,feet+1.3,z),DOWN);
+  downRay.near=0;downRay.far=3.2;downRay.firstHitOnly=false;
+  const hits=downRay.intersectObjects(collisionMeshes,false);
+  hitCount=hits.length;
+  for(const hit of hits){
+   if(!hit.face)continue;
+   NORMAL.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
+   if(Math.abs(NORMAL.y)>=SLOPE){hitY=hit.point.y;break}
+  }
+ }
+ xrLastGroundHit=hitY;
+ xrInfoCtx.fillStyle='#14251b';xrInfoCtx.fillRect(0,0,512,256);
+ xrInfoCtx.fillStyle=collisionReady?'#9ee0af':'#f8bd8e';
+ xrInfoCtx.font='bold 29px Arial';xrInfoCtx.fillText(collisionReady?'PHYSICS READY':'PHYSICS NOT READY',20,42);
+ xrInfoCtx.fillStyle='#ffffff';xrInfoCtx.font='24px Arial';
+ xrInfoCtx.fillText('Indexed meshes: '+collisionMeshes.length,20,84);
+ xrInfoCtx.fillText('Floor ray hits: '+hitCount,20,123);
+ xrInfoCtx.fillText('Ground Y: '+(hitY===null?'NONE':hitY.toFixed(2)),20,162);
+ xrInfoCtx.fillText('Player Y: '+feet.toFixed(2),20,201);
+ if(collisionFailure){xrInfoCtx.fillStyle='#f9ba8b';xrInfoCtx.font='17px Arial';xrInfoCtx.fillText(collisionFailure.slice(0,57),20,234)}
+ else{xrInfoCtx.fillStyle='#d0c29d';xrInfoCtx.font='17px Arial';xrInfoCtx.fillText('Read this panel on right controller',20,234)}
+ xrInfoTexture.needsUpdate=true;
+}
 const xrFw=new THREE.Vector3(),xrRt=new THREE.Vector3(),xrQ=new THREE.Quaternion();
 const xrHeadA=new THREE.Vector3(),xrHeadB=new THREE.Vector3(),xrUp=new THREE.Vector3(0,1,0);
 const xrWallNormal=new THREE.Vector3();
@@ -327,6 +364,7 @@ function updateXRLocomotion(dt){
    dz=(xrFw.z*(-walk.y)+xrRt.z*walk.x)*dist;
  }
  if(collisionReady)xrGroundFollow(xrHeadA,dx,dz,dt);
+ updateXRDiagnostics(dt,xrHeadA.x,xrHeadA.z,rig.position.y);
  // Continuous analog turn: rotate for as long as the stick is held.
  const analog=Math.abs(turn.x)<.16?0:Math.sign(turn.x)*(Math.abs(turn.x)-.16)/.84;
  xrTurnVelocity=THREE.MathUtils.damp(xrTurnVelocity,-analog*XR_TURN_RATE,XR_TURN_RESPONSE,dt);
@@ -369,11 +407,12 @@ function moveToController(controller){
 }
 for(let i=0;i<2;i++){
  const controller=renderer.xr.getController(i);rig.add(controller);
+ if(i===1)controller.add(xrInfoPanel);
  const ray=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3(0,0,-1)]),new THREE.LineBasicMaterial({color:0xdac28e}));ray.scale.z=8;controller.add(ray);
  controller.addEventListener('selectstart',()=>{if(renderer.xr.isPresenting)moveToController(controller)})
 }
-renderer.xr.addEventListener('sessionstart',()=>{xrTurnVelocity=0;vrWalkState.velocity=0;rig.rotation.y=0;buildWalkPhysics().then(ok=>{if(ok&&renderer.xr.isPresenting)status('Quest 3 capsule collision ready: walk on ramps & floors; hold right stick to turn');});window.poornaNavigation?.vrStart();window.poornaExhibition?.stop();rig.position.set(0,modelBounds.min.y,modelBounds.max.z+4);status('Quest 3: left joystick walks · right joystick smooth turning · trigger teleports.');tag.textContent='IMMERSIVE VR ACTIVE'});
-renderer.xr.addEventListener('sessionend',()=>{window.poornaNavigation?.vrEnd();rig.position.set(0,0,0);tag.textContent=modelLoaded?'ACTUAL MARKET MODEL LOADED':'MODEL READY TO LOAD';setMode('orbit');status('Exited immersive VR mode')});
+renderer.xr.addEventListener('sessionstart',()=>{xrInfoPanel.visible=true;xrTurnVelocity=0;vrWalkState.velocity=0;rig.rotation.y=0;buildWalkPhysics().then(ok=>{if(ok&&renderer.xr.isPresenting)status('Quest 3 capsule collision ready: walk on ramps & floors; hold right stick to turn');});window.poornaNavigation?.vrStart();window.poornaExhibition?.stop();rig.position.set(0,modelBounds.min.y,modelBounds.max.z+4);status('Quest 3: left joystick walks · right joystick smooth turning · trigger teleports.');tag.textContent='IMMERSIVE VR ACTIVE'});
+renderer.xr.addEventListener('sessionend',()=>{xrInfoPanel.visible=false;window.poornaNavigation?.vrEnd();rig.position.set(0,0,0);tag.textContent=modelLoaded?'ACTUAL MARKET MODEL LOADED':'MODEL READY TO LOAD';setMode('orbit');status('Exited immersive VR mode')});
 $('vrEnterBtn').addEventListener('click',async()=>{
  if(!modelLoaded){notice('Load the actual market model before entering VR.');return}
  if(!window.isSecureContext){notice('Immersive VR requires HTTPS. Deploy the site to a secure URL.');return}
