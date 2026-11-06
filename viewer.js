@@ -218,7 +218,7 @@ renderer.setAnimationLoop(()=>{
      }
    }else orbit.update();
  }
- if(renderer.xr.isPresenting)updateXRLocomotion(delta);
+ if(renderer.xr.isPresenting){try{updateXRLocomotion(delta)}catch(error){if(!vrReport.error||vrReport.frames%120===0)recordXRFailure(error)}}
  window.poornaExhibition?.tick(delta);
  window.poornaNavigation?.tick(delta);
  if(!window.poornaNavigation?.renderStereo?.())renderer.render(scene,camera);
@@ -267,6 +267,45 @@ document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement
 // turns continuously while held. Ground movement is shared with desktop Walk.
 // Quest diagnostics on the controller: shows whether physics is actually active,
 // the ground ray's reading, and the tracked player floor elevation.
+
+// A persistent Quest diagnostics log survives exiting VR or reloading the page.
+// This avoids dependence on a floating WebXR HUD, which may be hard to see.
+const vrReportEl=$('vrReport'),vrReportText=$('vrReportText');
+let vrReport={state:'Not tested',indexedMeshes:0,floorRayHits:0,groundY:null,playerY:null,
+ position:null,frames:0,error:'',updatedAt:''};
+function publishVRReport(){
+ if(!vrReportEl||!vrReportText)return;
+ const report=vrReport;
+ vrReportText.textContent=[
+  'Physics: '+report.state,
+  'Indexed meshes: '+report.indexedMeshes,
+  'Floor ray hits: '+report.floorRayHits,
+  'Ground Y: '+(report.groundY===null?'NONE':report.groundY.toFixed(2)),
+  'Player Y: '+(report.playerY===null?'NONE':report.playerY.toFixed(2)),
+  'Position X/Z: '+(report.position?report.position.map(n=>n.toFixed(2)).join(' / '):'NONE'),
+  'Updated frames: '+report.frames,
+  report.error?'Error: '+report.error:'Error: none'
+ ].join('\n');
+ vrReportEl.hidden=false;
+ try{localStorage.setItem('poorna-quest-diagnostics',JSON.stringify(report))}catch(e){}
+}
+try{
+ const previous=JSON.parse(localStorage.getItem('poorna-quest-diagnostics')||'null');
+ if(previous&&typeof previous==='object'){vrReport={...vrReport,...previous};publishVRReport()}
+}catch(e){}
+$('vrReportCopy')?.addEventListener('click',()=>{
+ if(navigator.clipboard?.writeText)navigator.clipboard.writeText(vrReportText.textContent).then(()=>status('VR diagnostics copied')).catch(()=>{});
+ else {const range=document.createRange();range.selectNodeContents(vrReportText);const selection=getSelection();selection.removeAllRanges();selection.addRange(range)}
+});
+function recordXRFailure(error){
+ vrReport.error=String(error?.stack||error?.message||error).slice(0,600);
+ vrReport.state=collisionReady?'PHYSICS READY (runtime error)':'PHYSICS NOT READY (runtime error)';
+ vrReport.indexedMeshes=collisionMeshes.length;
+ vrReport.updatedAt=new Date().toISOString();
+ publishVRReport();
+ console.error('Quest locomotion diagnostics',error);
+}
+
 const xrInfoCanvas=document.createElement('canvas');xrInfoCanvas.width=512;xrInfoCanvas.height=256;
 const xrInfoCtx=xrInfoCanvas.getContext('2d'),xrInfoTexture=new THREE.CanvasTexture(xrInfoCanvas);
 xrInfoTexture.colorSpace=THREE.SRGBColorSpace;
@@ -306,6 +345,8 @@ function updateXRDiagnostics(dt,x,z,feet){
   }
  }
  xrLastGroundHit=hitY;
+ vrReport={state:collisionReady?'PHYSICS READY':'PHYSICS NOT READY',indexedMeshes:collisionMeshes.length,floorRayHits:hitCount,groundY:hitY,playerY:feet,position:[x,z],frames:vrReport.frames+1,error:collisionFailure||vrReport.error,updatedAt:new Date().toISOString()};
+ publishVRReport();
  xrInfoCtx.fillStyle='#14251b';xrInfoCtx.fillRect(0,0,512,256);
  xrInfoCtx.fillStyle=collisionReady?'#9ee0af':'#f8bd8e';
  xrInfoCtx.font='bold 29px Arial';xrInfoCtx.fillText(collisionReady?'PHYSICS READY':'PHYSICS NOT READY',20,42);
@@ -427,8 +468,8 @@ for(let i=0;i<2;i++){
  const ray=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3(0,0,-1)]),new THREE.LineBasicMaterial({color:0xdac28e}));ray.scale.z=8;controller.add(ray);
  controller.addEventListener('selectstart',()=>{if(renderer.xr.isPresenting)moveToController(controller)})
 }
-renderer.xr.addEventListener('sessionstart',()=>{xrInfoPanel.visible=true;xrTurnVelocity=0;vrWalkState.velocity=0;rig.rotation.y=0;buildWalkPhysics().then(ok=>{if(ok&&renderer.xr.isPresenting)status('Quest 3 capsule collision ready: walk on ramps & floors; hold right stick to turn');});window.poornaNavigation?.vrStart();window.poornaExhibition?.stop();rig.position.set(0,modelBounds.min.y,modelBounds.max.z+4);status('Quest 3: left joystick walks · right joystick smooth turning · trigger teleports.');tag.textContent='IMMERSIVE VR ACTIVE'});
-renderer.xr.addEventListener('sessionend',()=>{xrInfoPanel.visible=false;window.poornaNavigation?.vrEnd();rig.position.set(0,0,0);tag.textContent=modelLoaded?'ACTUAL MARKET MODEL LOADED':'MODEL READY TO LOAD';setMode('orbit');status('Exited immersive VR mode')});
+renderer.xr.addEventListener('sessionstart',()=>{vrReport={state:'Starting VR',indexedMeshes:collisionMeshes.length,floorRayHits:0,groundY:null,playerY:null,position:null,frames:0,error:'',updatedAt:new Date().toISOString()};publishVRReport();xrInfoPanel.visible=true;xrTurnVelocity=0;vrWalkState.velocity=0;rig.rotation.y=0;buildWalkPhysics().then(ok=>{if(ok&&renderer.xr.isPresenting)status('Quest 3 capsule collision ready: walk on ramps & floors; hold right stick to turn');});window.poornaNavigation?.vrStart();window.poornaExhibition?.stop();rig.position.set(0,modelBounds.min.y,modelBounds.max.z+4);status('Quest 3: left joystick walks · right joystick smooth turning · trigger teleports.');tag.textContent='IMMERSIVE VR ACTIVE'});
+renderer.xr.addEventListener('sessionend',()=>{vrReport.state=vrReport.frames?'VR ended — last readings':'VR ended — no diagnostic samples';publishVRReport();xrInfoPanel.visible=false;window.poornaNavigation?.vrEnd();rig.position.set(0,0,0);tag.textContent=modelLoaded?'ACTUAL MARKET MODEL LOADED':'MODEL READY TO LOAD';setMode('orbit');status('Exited immersive VR mode')});
 $('vrEnterBtn').addEventListener('click',async()=>{
  if(!modelLoaded){notice('Load the actual market model before entering VR.');return}
  if(!window.isSecureContext){notice('Immersive VR requires HTTPS. Deploy the site to a secure URL.');return}
