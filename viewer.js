@@ -56,7 +56,8 @@ function setRenderingProfile(next){
  renderingProfile.shadowEnabled=!immersive&&!portable;
  renderer.shadowMap.enabled=renderingProfile.shadowEnabled;
  sun.castShadow=renderingProfile.shadowEnabled;
- renderer.setPixelRatio(immersive?1:Math.min(devicePixelRatio,portable?1.25:1.65));
+ // XR owns its recommended per-eye framebuffer. Never resize mid-session.
+ if(!immersive)renderer.setPixelRatio(Math.min(devicePixelRatio,portable?1.25:1.65));
  if(immersive){
   renderer.toneMappingExposure=1.30;
   scene.environmentIntensity=.30;
@@ -133,11 +134,10 @@ async function prepareEnvironmentLighting(){
   console.warn('Optional reflective environment unavailable; direct lighting remains active',error);
  }
 }
-setRenderingProfile(isPortableDevice?'mobile':'desktop');
-
 const grid=new THREE.GridHelper(260,52,0xa4aea3,0xc7d1c6);grid.position.y=-.07;grid.material.opacity=.22;grid.material.transparent=true;scene.add(grid);
 let model=null,modelBounds=new THREE.Box3(new THREE.Vector3(-46,0,-38),new THREE.Vector3(46,20,38));
 let modelLoaded=false,isLoading=false,currentMode='orbit',visible=true,lockRequested=false;
+setRenderingProfile(isPortableDevice?'mobile':'desktop');
 const EYE=1.7, STEP=.55, SLOPE=.55, RADIUS=.28;
 let collisionMeshes=[],collisionReady=false,collisionPromise=null,collisionFailure='',fallSpeed=0;
 const downRay=new THREE.Raycaster(),wallRay=new THREE.Raycaster(),DOWN=new THREE.Vector3(0,-1,0),NORMAL=new THREE.Vector3();
