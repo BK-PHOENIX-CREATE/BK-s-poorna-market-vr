@@ -59,7 +59,7 @@ function makeCamera(mode){
    camera.rotation.order='YXZ';camera.rotation.set(pitch,yaw,0);orbit.enabled=false;
    modeLabel.textContent=mode==='sky'?'AERIAL / FREE FLIGHT':'HUMAN SCALE / GROUNDED WALK';
    if(mode==='walk'){
-     fallSpeed=0;
+     fallSpeed=0;desktopWalkState.velocity=0;
      const floor=collisionReady?floorAt(camera.position.x,camera.position.z,camera.position.y-EYE,STEP,8):null;
      if(floor!==null)camera.position.y=floor+EYE;
      status('Walk: WASD across real floors/ramps · Shift faster · click to look · Esc release');
@@ -133,41 +133,63 @@ function floorAt(x,z,foot,step=STEP,drop=2.6){
  if(foot>=-2.5&&foot<=3&&x>=modelBounds.min.x-12&&x<=modelBounds.max.x+12&&z>=modelBounds.min.z-12&&z<=modelBounds.max.z+12)return -.08;
  return null;
 }
-function wallAhead(dx,dz){
- const distance=Math.hypot(dx,dz);if(distance<.00001)return false;
- const direction=new THREE.Vector3(dx/distance,0,dz/distance);
- for(const offset of [-.5,-1.15]){
-   wallRay.set(new THREE.Vector3(camera.position.x,camera.position.y+offset,camera.position.z),direction);
-   wallRay.near=0;wallRay.far=distance+RADIUS;wallRay.firstHitOnly=false;
-   for(const hit of wallRay.intersectObjects(collisionMeshes,false)){
-     if(!hit.face)continue;
-     NORMAL.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
-     if(Math.abs(NORMAL.y)<.5)return true;
+// Both desktop Walk and Quest VR call ONE surface-following controller.
+// x/z represent the player's horizontal body center; feet is the ground
+// contact height (not the headset's eye height).
+const walkRayDir=new THREE.Vector3(),walkNormal=new THREE.Vector3(),walkSide=new THREE.Vector3();
+const walkWallRay=new THREE.Raycaster();
+function wallAheadAt(x,z,feet,dx,dz){
+ const distance=Math.hypot(dx,dz);
+ if(distance<.00001||!collisionReady)return false;
+ walkRayDir.set(dx/distance,0,dz/distance);
+ walkSide.set(-walkRayDir.z,0,walkRayDir.x);
+ // Body-width samples at ankle, knee, torso and shoulder height.
+ for(const side of [-RADIUS,0,RADIUS]){
+  for(const height of [.25,.65,1.12,1.52]){
+   walkWallRay.set(new THREE.Vector3(x+walkSide.x*side,feet+height,z+walkSide.z*side),walkRayDir);
+   walkWallRay.near=0;walkWallRay.far=distance+RADIUS*.6;walkWallRay.firstHitOnly=false;
+   for(const hit of walkWallRay.intersectObjects(collisionMeshes,false)){
+    if(!hit.face)continue;
+    walkNormal.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
+    if(Math.abs(walkNormal.y)<.52)return true;
    }
+  }
  }
  return false;
 }
-function moveWalk(dx,dz,dt){
- const feet=camera.position.y-EYE;
- let x=camera.position.x+dx,z=camera.position.z+dz;
- if(wallAhead(dx,dz)){x=camera.position.x;z=camera.position.z}
- let floor=floorAt(x,z,feet,STEP,2.2);
+function groundedStep(x,z,feet,dx,dz,dt,state){
+ if(!collisionReady)return {x,z,feet};
+ let candidateX=x+dx,candidateZ=z+dz;
+ if(wallAheadAt(x,z,feet,dx,dz)){
+  candidateX=wallAheadAt(x,z,feet,dx,0)?x:x+dx;
+  candidateZ=wallAheadAt(candidateX,z,feet,0,dz)?z:z+dz;
+ }
+ // Identical geometry query and step rules for desktop and VR.
+ let floor=floorAt(candidateX,candidateZ,feet,STEP,2.2);
  if(floor!==null&&floor>feet+STEP+.02){
-   x=camera.position.x;z=camera.position.z;floor=floorAt(x,z,feet,STEP,2.2);
+  candidateX=x;candidateZ=z;
+  floor=floorAt(x,z,feet,STEP,2.2);
  }
- camera.position.x=x;camera.position.z=z;
- if(floor!==null&&floor>=feet-.75){camera.position.y=floor+EYE;fallSpeed=0}
- else{
-   fallSpeed=Math.min(23,fallSpeed+17*dt);
-   const nextFeet=feet-fallSpeed*dt;
-   const landing=floorAt(x,z,nextFeet,STEP,1.5);
-   if(landing!==null&&nextFeet<=landing){camera.position.y=landing+EYE;fallSpeed=0}
-   else camera.position.y=nextFeet+EYE;
+ let nextFeet=feet;
+ if(floor!==null&&floor>=feet-.75){
+  nextFeet=floor;state.velocity=0;
+ }else{
+  state.velocity=Math.min(23,state.velocity+17*dt);
+  const falling=feet-state.velocity*dt;
+  const landing=floorAt(candidateX,candidateZ,falling,STEP,1.5);
+  if(landing!==null&&falling<=landing){nextFeet=landing;state.velocity=0}
+  else nextFeet=falling;
  }
- const box=modelBounds.clone().expandByScalar(12);
- camera.position.x=THREE.MathUtils.clamp(camera.position.x,box.min.x,box.max.x);
- camera.position.z=THREE.MathUtils.clamp(camera.position.z,box.min.z,box.max.z);
- if(camera.position.y<modelBounds.min.y+EYE-2){camera.position.y=modelBounds.min.y+EYE;fallSpeed=0}
+ const bounds=modelBounds.clone().expandByScalar(12);
+ candidateX=THREE.MathUtils.clamp(candidateX,bounds.min.x,bounds.max.x);
+ candidateZ=THREE.MathUtils.clamp(candidateZ,bounds.min.z,bounds.max.z);
+ if(nextFeet<modelBounds.min.y-2){nextFeet=modelBounds.min.y;state.velocity=0}
+ return {x:candidateX,z:candidateZ,feet:nextFeet};
+}
+const desktopWalkState={velocity:0},vrWalkState={velocity:0};
+function moveWalk(dx,dz,dt){
+ const result=groundedStep(camera.position.x,camera.position.z,camera.position.y-EYE,dx,dz,dt,desktopWalkState);
+ camera.position.set(result.x,result.feet+EYE,result.z);
 }
 
 const clock=new THREE.Clock();
@@ -241,183 +263,33 @@ $('closeHelpBtn').addEventListener('click',()=>$('viewerHelp').hidden=true);
 $('fullscreenBtn').addEventListener('click',async()=>{const shell=$('viewerShell');if(document.fullscreenElement){await document.exitFullscreen?.();shell.classList.remove('is-fullscreen')}else{if(shell.requestFullscreen){try{await shell.requestFullscreen()}catch{shell.classList.add('is-fullscreen')}}else shell.classList.add('is-fullscreen')}resize()});
 document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement)$('viewerShell').classList.remove('is-fullscreen');resize()});
 
-// Meta Quest 3 joystick locomotion: Touch left stick walks, right stick snap-turns.
-// Meta Quest 3: headset-relative directional walking on the GLB's REAL geometry.
-// Left stick: forward/back/strafe relative to the headset yaw, regardless of
-// where the physical controller points. Right stick: smooth 12-degree steps.
+// Quest 3: left thumbstick is relative to headset yaw; right thumbstick
+// turns continuously while held. Ground movement is shared with desktop Walk.
 const xrFw=new THREE.Vector3(),xrRt=new THREE.Vector3(),xrQ=new THREE.Quaternion();
 const xrHeadA=new THREE.Vector3(),xrHeadB=new THREE.Vector3(),xrUp=new THREE.Vector3(0,1,0);
-const xrCast=new THREE.Raycaster(),xrWallNormal=new THREE.Vector3(),xrTravel=new THREE.Vector3();
-let xrTurnVelocity=0,xrFallVelocity=0;
+const xrWallNormal=new THREE.Vector3();
+let xrTurnVelocity=0;
 const XR_TURN_RATE=THREE.MathUtils.degToRad(75),XR_TURN_RESPONSE=11;
 function getXRStick(source){
  const a=source?.gamepad?.axes||[];
- // Quest Touch Plus commonly maps sticks to axes 2,3; compatible fallbacks use 0,1.
  const x=a.length>=4?(a[2]||0):(a[0]||0),y=a.length>=4?(a[3]||0):(a[1]||0);
  return {x:Math.abs(x)>.16?x:0,y:Math.abs(y)>.16?y:0};
 }
-// Capsule collisions (three-mesh-bvh shapecast) keep the *whole body*
-// outside actual triangles, not just a ray beneath the player's eye.
-const XR_RADIUS=.30,XR_SKIN=.012;
-const xrLocalInverse=new THREE.Matrix4(),xrLocalSegment=new THREE.Line3();
-const xrLocalBox=new THREE.Box3(),xrPointOnTriangle=new THREE.Vector3(),xrPointOnCapsule=new THREE.Vector3();
-const xrPush=new THREE.Vector3(),xrLocalNormal=new THREE.Vector3(),xrBefore=new THREE.Vector3();
-const xrCandidate=new THREE.Vector3(),xrFootWorld=new THREE.Vector3(),xrBodyScale=new THREE.Vector3();
-const xrBodyQuat=new THREE.Quaternion(),xrTmpDelta=new THREE.Vector3();
-let xrGrounded=false,xrHeightAdjust=0;
-function resolveXRCapsule(x,z,footY,eyeY){
- if(!collisionReady)return {x,z,y:footY,grounded:false};
- let px=x,pz=z,py=footY,grounded=false;
- const bodyHeight=THREE.MathUtils.clamp(eyeY-footY,.95,2.05);
- const capsuleTop=Math.max(.75,bodyHeight-.18);
- // Two iterations resolve intersecting ramps + nearby wall corners.
- for(let pass=0;pass<2;pass++){
-  for(const mesh of collisionMeshes){
-   const geometry=mesh.geometry,bvh=geometry.boundsTree;
-   if(!bvh)continue;
-   const worldBox=mesh.userData.collisionWorldBox;
-   if(worldBox&&
-      (px<worldBox.min.x-XR_RADIUS||px>worldBox.max.x+XR_RADIUS||
-       pz<worldBox.min.z-XR_RADIUS||pz>worldBox.max.z+XR_RADIUS||
-       py+capsuleTop+XR_RADIUS<worldBox.min.y||
-       py>worldBox.max.y+XR_RADIUS))continue;
-   xrLocalInverse.copy(mesh.matrixWorld).invert();
-   xrBefore.set(px,py+XR_RADIUS,pz);
-   xrLocalSegment.start.copy(xrBefore).applyMatrix4(xrLocalInverse);
-   xrLocalSegment.end.set(px,py+capsuleTop,pz).applyMatrix4(xrLocalInverse);
-   // Mesh scales are usually 1, but account for GLB transforms.
-   mesh.matrixWorld.decompose(xrCandidate,xrBodyQuat,xrBodyScale);
-   const minScale=Math.max(.0001,Math.min(Math.abs(xrBodyScale.x),Math.abs(xrBodyScale.y),Math.abs(xrBodyScale.z)));
-   const localRadius=XR_RADIUS/minScale;
-   xrLocalBox.makeEmpty().expandByPoint(xrLocalSegment.start).expandByPoint(xrLocalSegment.end).expandByScalar(localRadius+.04);
-   bvh.shapecast({
-    intersectsBounds:bounds=>bounds.intersectsBox(xrLocalBox),
-    intersectsTriangle:triangle=>{
-     const distance=triangle.closestPointToSegment(xrLocalSegment,xrPointOnTriangle,xrPointOnCapsule);
-     if(distance>=localRadius) return;
-     const depth=localRadius-distance+XR_SKIN/minScale;
-     xrPush.subVectors(xrPointOnCapsule,xrPointOnTriangle);
-     if(xrPush.lengthSq()<1e-10){
-       triangle.getNormal(xrLocalNormal);
-       xrPush.copy(xrLocalNormal);
-       // A two-sided ramp should push the player upward when ambiguous.
-       if(Math.abs(xrPush.y)>.52&&xrPush.y<0)xrPush.negate();
-     }
-     xrPush.normalize().multiplyScalar(depth);
-     xrLocalSegment.start.add(xrPush);
-     xrLocalSegment.end.add(xrPush);
-     xrLocalBox.translate(xrPush);
-    }
-   });
-   const newStart=xrLocalSegment.start.clone().applyMatrix4(mesh.matrixWorld);
-   xrTmpDelta.subVectors(newStart,xrBefore);
-   if(xrTmpDelta.y>.005)grounded=true;
-   px+=xrTmpDelta.x;pz+=xrTmpDelta.z;py+=xrTmpDelta.y;
-  }
- }
- return {x:px,z:pz,y:py,grounded};
-}
-
-const xrProbe=new THREE.Raycaster(),xrSampleNormal=new THREE.Vector3();
-const xrProbeDir=new THREE.Vector3(),xrFloorSamples=[[0,0],[.22,0],[-.22,0],[0,.22],[0,-.22]];
-let xrLastSupport=null;
-function xrFindSupport(x,z,feet,maxRise=1.05,maxDrop=1.1){
- if(!collisionReady)return null;
- // A real floor or ramp can start 0.6m above the exterior zero plane.
- // Query 5 samples across the user's body so one missing triangle
- // or narrow face cannot make the headset fall through the surface.
- const candidates=[];
- for(const [ox,oz] of xrFloorSamples){
-  xrProbe.set(new THREE.Vector3(x+ox,feet+maxRise+.07,z+oz),DOWN);
-  xrProbe.near=0;xrProbe.far=maxRise+maxDrop+.07;xrProbe.firstHitOnly=false;
-  for(const hit of xrProbe.intersectObjects(collisionMeshes,false)){
-   if(!hit.face)continue;
-   xrSampleNormal.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
-   if(Math.abs(xrSampleNormal.y)<.47)continue;
-   if(hit.point.y>feet+maxRise+.01||hit.point.y<feet-maxDrop-.01)continue;
-   candidates.push(hit.point.y);break;
-  }
- }
- if(!candidates.length)return null;
- // Prefer the upper walkable surface when a thin ramp/floor overlaps
- // another surface in projection; cap sudden elevation changes below.
- return Math.max(...candidates);
-}
-function xrBodyBlocked(headX,headZ,feet,eyeHeight,dx,dz){
- if(!collisionReady)return false;
- const distance=Math.hypot(dx,dz);if(distance<.00001)return false;
- xrProbeDir.set(dx/distance,0,dz/distance);
- const offsets=[[-.21,0],[.21,0],[0,-.21],[0,.21],[0,0]];
- const bodyY=[.28,Math.min(.90,eyeHeight-.25),Math.min(1.35,eyeHeight-.12)];
- for(const [ox,oz] of offsets){
-  for(const height of bodyY){
-   xrProbe.set(new THREE.Vector3(headX+ox,feet+height,headZ+oz),xrProbeDir);
-   xrProbe.near=0;xrProbe.far=distance+.055;xrProbe.firstHitOnly=false;
-   const hits=xrProbe.intersectObjects(collisionMeshes,false);
-   for(const hit of hits){
-    if(!hit.face)continue;
-    xrSampleNormal.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
-    // A near-vertical surface is a wall. For inclined geometry, the
-    // ground probe decides whether it is a walkable rise or obstruction.
-    if(Math.abs(xrSampleNormal.y)<.44)return true;
-   }
-  }
- }
- return false;
-}
 function xrGroundFollow(head,dx,dz,dt){
  if(!collisionReady)return;
- const baseFoot=rig.position.y;
- const eyeHeight=THREE.MathUtils.clamp(head.y-baseFoot,1.0,2.1);
- const steps=Math.max(1,Math.ceil(Math.hypot(dx,dz)/.055));
- let positionX=head.x,positionZ=head.z,feet=baseFoot;
- let supported=false;
+ // Quest local-floor reference space tracks the real physical head position,
+ // while rig.position.y is the virtual floor. Do NOT use camera.position.y,
+ // which is desktop-only while XR is presenting.
+ const steps=Math.max(1,Math.ceil(Math.hypot(dx,dz)/.095));
+ let x=head.x,z=head.z,feet=rig.position.y;
  for(let i=0;i<steps;i++){
-  const stepX=dx/steps,stepZ=dz/steps;
-  let tx=positionX+stepX,tz=positionZ+stepZ;
-  if(xrBodyBlocked(positionX,positionZ,feet,eyeHeight,stepX,stepZ)){
-   // Sliding independently along X/Z gives smooth navigation at corners
-   // without passing through walls.
-   tx=xrBodyBlocked(positionX,positionZ,feet,eyeHeight,stepX,0)?positionX:positionX+stepX;
-   tz=xrBodyBlocked(tx,positionZ,feet,eyeHeight,0,stepZ)?positionZ:positionZ+stepZ;
-  }
-  let nextFloor=xrFindSupport(tx,tz,feet,1.05,1.0);
-  if(nextFloor!==null&&nextFloor>feet+.82){
-   // Reject vertical jumps (walls), but allow 0.6m ground-level floor.
-   tx=positionX;tz=positionZ;
-   nextFloor=xrFindSupport(tx,tz,feet,1.05,1.0);
-  }
-  let nextY=feet;
-  if(nextFloor!==null&&nextFloor>=feet-.42){
-   // Follow ramp heights immediately, without slowly sinking into slab.
-   nextY=nextFloor+.012;
-   supported=true;xrFallVelocity=0;
-  }
-  const resolved=resolveXRCapsule(tx,tz,nextY,nextY+eyeHeight);
-  // Keep the capsule above the support surface after wall correction.
-  if(nextFloor!==null)resolved.y=Math.max(resolved.y,nextFloor+.012);
-  rig.position.x+=resolved.x-positionX;
-  rig.position.z+=resolved.z-positionZ;
-  rig.position.y+=resolved.y-feet;
-  positionX=resolved.x;positionZ=resolved.z;feet=resolved.y;
+  const result=groundedStep(x,z,feet,dx/steps,dz/steps,dt/steps,vrWalkState);
+  rig.position.x+=result.x-x;
+  rig.position.z+=result.z-z;
+  rig.position.y+=result.feet-feet;
+  x=result.x;z=result.z;feet=result.feet;
  }
- const support=xrFindSupport(positionX,positionZ,feet,.7,.85);
- if(support!==null&&support>=feet-.40){
-  rig.position.y=Math.max(support+.012,feet-.04);
-  xrFallVelocity=0;supported=true;xrLastSupport=support;
- }else if(!supported){
-  xrFallVelocity=Math.min(9,xrFallVelocity+12*dt);
-  const falling=resolveXRCapsule(positionX,positionZ,feet-xrFallVelocity*dt,feet+eyeHeight-xrFallVelocity*dt);
-  rig.position.x+=falling.x-positionX;rig.position.z+=falling.z-positionZ;
-  rig.position.y=falling.y;
-  if(falling.grounded)xrFallVelocity=0;
- }else xrFallVelocity=0;
- const limits=modelBounds.clone().expandByScalar(12);
- rig.position.x=THREE.MathUtils.clamp(rig.position.x,limits.min.x,limits.max.x);
- rig.position.z=THREE.MathUtils.clamp(rig.position.z,limits.min.z,limits.max.z);
- if(rig.position.y<modelBounds.min.y-.12){rig.position.y=modelBounds.min.y-.08;xrFallVelocity=0}
 }
-
 function xrSmoothTurn(head,angle){
  if(Math.abs(angle)<.000001)return;
  // Rotate the rig around the actual headset position, so a physically
@@ -491,16 +363,16 @@ function moveToController(controller){
  head.getWorldPosition(xrHeadA);
  rig.position.x+=target.x-xrHeadA.x;
  rig.position.z+=target.z-xrHeadA.z;
- const floor=xrFindSupport(target.x,target.z,target.y,.65,1.8);
- rig.position.y=(floor??target.y)+.012;
- xrFallVelocity=0;
+ const floor=floorAt(target.x,target.z,target.y,STEP,1.8);
+ rig.position.y=floor??target.y;
+ vrWalkState.velocity=0;
 }
 for(let i=0;i<2;i++){
  const controller=renderer.xr.getController(i);rig.add(controller);
  const ray=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3(0,0,-1)]),new THREE.LineBasicMaterial({color:0xdac28e}));ray.scale.z=8;controller.add(ray);
  controller.addEventListener('selectstart',()=>{if(renderer.xr.isPresenting)moveToController(controller)})
 }
-renderer.xr.addEventListener('sessionstart',()=>{xrTurnVelocity=0;xrFallVelocity=0;rig.rotation.y=0;buildWalkPhysics().then(ok=>{if(ok&&renderer.xr.isPresenting)status('Quest 3 capsule collision ready: walk on ramps & floors; hold right stick to turn');});window.poornaNavigation?.vrStart();window.poornaExhibition?.stop();rig.position.set(0,modelBounds.min.y,modelBounds.max.z+4);status('Quest 3: left joystick walks · right joystick smooth turning · trigger teleports.');tag.textContent='IMMERSIVE VR ACTIVE'});
+renderer.xr.addEventListener('sessionstart',()=>{xrTurnVelocity=0;vrWalkState.velocity=0;rig.rotation.y=0;buildWalkPhysics().then(ok=>{if(ok&&renderer.xr.isPresenting)status('Quest 3 capsule collision ready: walk on ramps & floors; hold right stick to turn');});window.poornaNavigation?.vrStart();window.poornaExhibition?.stop();rig.position.set(0,modelBounds.min.y,modelBounds.max.z+4);status('Quest 3: left joystick walks · right joystick smooth turning · trigger teleports.');tag.textContent='IMMERSIVE VR ACTIVE'});
 renderer.xr.addEventListener('sessionend',()=>{window.poornaNavigation?.vrEnd();rig.position.set(0,0,0);tag.textContent=modelLoaded?'ACTUAL MARKET MODEL LOADED':'MODEL READY TO LOAD';setMode('orbit');status('Exited immersive VR mode')});
 $('vrEnterBtn').addEventListener('click',async()=>{
  if(!modelLoaded){notice('Load the actual market model before entering VR.');return}
