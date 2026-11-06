@@ -6,7 +6,7 @@ const $=id=>document.getElementById(id);
 const v=window.poornaViewer;
 if(!v) throw new Error('3D model viewer is not available');
 const {camera,scene,renderer,orbit,sun,opposite,ambient,ground}=v;
-const stops=[
+let stops=[
  {id:'arrival',title:'Arrival & street edge',desc:'Examine the relationship between the market proposal and its public-facing site edges.',label:'Site and access',note:'The project panel includes site analysis and access studies. Compare this view with the contextual drawings.',anchor:[-.4,.12,.40]},
  {id:'overview',title:'The market as a whole',desc:'Understand built massing, internal routes and the overall market organization.',label:'Market organization',note:'Use the floor plans and circulation diagrams alongside this view to read the proposed trading and public spaces.',anchor:[0,.13,0]},
  {id:'plan',title:'Roof & spatial layout',desc:'Study the building volume and the organization of the levels from above.',label:'Roof and levels',note:'The architectural drawings include plans, sections and elevations showing different building levels.',anchor:[.08,.85,-.1]},
@@ -20,19 +20,27 @@ const elements={
 };
 let current=-1,playing=false,elapsed=0,enabled=true,tween=null,infoIndex=-1,loaded=false;
 const temp=new THREE.Vector3();
-const buttons=stops.map((stop,i)=>{
+let buttons=[];
+function rebuildHotspots(){
+ buttons.forEach(b=>b.remove());buttons=[];
+ stops.forEach((stop,i)=>{
+
  const b=document.createElement('button');
  b.type='button';b.className='ex-hotspot';b.textContent=String(i+1).padStart(2,'0');
  b.title=stop.label;b.setAttribute('aria-label',stop.label);
  b.addEventListener('click',()=>{pause();showInfo(i)});
- elements.points.appendChild(b);return b;
-});
+ elements.points.appendChild(b);buttons.push(b);
+ });
+}
+rebuildHotspots();
 function point(normalized){
  const box=v.getBounds(),size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3());
+ if(!normalized)return center;
+ if(normalized.length===3&&normalized.some(n=>Math.abs(n)>1.1))return new THREE.Vector3(...normalized);
  return new THREE.Vector3(center.x+normalized[0]*size.x,center.y+normalized[1]*size.y,center.z+normalized[2]*size.z);
 }
 function showInfo(i){
- infoIndex=i;const stop=stops[i];
+ infoIndex=i;const stop=stops[i];if(!stop)return;
  elements.index.textContent=String(i+1).padStart(2,'0')+' / ARCHITECTURAL INSIGHT';
  elements.title.textContent=stop.label;elements.body.textContent=stop.note;elements.info.hidden=false;
  buttons.forEach((b,j)=>b.classList.toggle('active',j===i));
@@ -45,6 +53,7 @@ elements.toggle.addEventListener('click',()=>{
  elements.points.hidden=!enabled;if(!enabled)closeInfo();
 });
 function positionFor(id){
+ const custom=stops.find(stop=>stop.id===id);if(custom?.pose?.position&&custom?.pose?.target)return {position:new THREE.Vector3(...custom.pose.position),target:new THREE.Vector3(...custom.pose.target)};
  const box=v.getBounds(),size=box.getSize(new THREE.Vector3()),c=box.getCenter(new THREE.Vector3());
  const d=Math.max(size.x,size.z,35),h=Math.max(size.y,9),target=new THREE.Vector3(c.x,c.y+h*.04,c.z);
  switch(id){
@@ -72,17 +81,17 @@ function view(id,fromTour=false){
 elements.views.addEventListener('change',()=>{if(elements.views.value)view(elements.views.value)});
 function updateTour(){
  const stop=stops[current];
- elements.tourTitle.textContent=stop?stop.title:'Five moments through Poorna Market';
+ elements.tourTitle.textContent=stop?stop.title:'Your custom journey through Poorna Market';
  elements.tourDesc.textContent=stop?stop.desc:'Load the model to begin the journey.';
- elements.tourCount.textContent=String(Math.max(0,current+1)).padStart(2,'0')+' / 05';
- elements.play.textContent=playing?'Ⅱ Pause tour':current===4?'↺ Replay tour':current<0?'▶ Start tour':'▶ Resume tour';
+ elements.tourCount.textContent=String(Math.max(0,current+1)).padStart(2,'0')+' / '+String(stops.length).padStart(2,'0');
+ elements.play.textContent=playing?'Ⅱ Pause tour':current>=stops.length-1?'↺ Replay tour':current<0?'▶ Start tour':'▶ Resume tour';
  elements.prev.disabled=!loaded||current<=0;
- elements.next.disabled=!loaded||current>=4;
+ elements.next.disabled=!loaded||current>=stops.length-1;
 }
 function pause(){playing=false;updateTour()}
 function stop(){pause();tween=null}
 function stopAt(i,autoplay=false){
- if(!v.isLoaded())return;
+ if(!v.isLoaded()||!stops.length)return;
  current=THREE.MathUtils.clamp(i,0,stops.length-1);elapsed=0;
  view(stops[current].id,true);
  playing=autoplay;
@@ -92,7 +101,8 @@ function stopAt(i,autoplay=false){
 elements.play.addEventListener('click',()=>{
  if(!v.isLoaded()){v.notice('Load the 3D model first.');return}
  if(playing){pause();return}
- if(current===-1||current===4){stopAt(0,true);return}
+ if(!stops.length){v.notice('Add at least one tour marker in Plan Tour.');return}
+ if(current===-1||current>=stops.length-1){stopAt(0,true);return}
  playing=true;updateTour();
 });
 elements.prev.addEventListener('click',()=>stopAt(current-1,false));
@@ -143,6 +153,15 @@ function tick(dt){
   b.hidden=outside;if(!outside){b.style.left=((temp.x*.5+.5)*width)+'px';b.style.top=((-temp.y*.5+.5)*height)+'px'}
  });
 }
+function setTourStops(next){if(!Array.isArray(next)||next.length>50)return false;
+ const valid=next.every(item=>item&&typeof item.id==='string'&&typeof item.title==='string'&&typeof item.desc==='string'&&Array.isArray(item.anchor)&&item.anchor.length===3);
+ if(!valid)return false;
+ stops=next.map((item,i)=>({id:String(item.id).slice(0,60),title:String(item.title).slice(0,75),desc:String(item.desc).slice(0,500),label:String(item.label||item.title).slice(0,75),note:String(item.note||item.desc).slice(0,500),anchor:item.anchor.map(Number),pose:item.pose&&Array.isArray(item.pose.position)&&Array.isArray(item.pose.target)?{position:item.pose.position.map(Number),target:item.pose.target.map(Number)}:undefined}));
+ current=-1;playing=false;tween=null;closeInfo();rebuildHotspots();
+ elements.views.innerHTML='<option value="">Choose a saved view…</option>';
+ stops.forEach(stop=>{const opt=document.createElement('option');opt.value=stop.id;opt.textContent=stop.title;elements.views.appendChild(opt)});
+ updateTour();return true;
+}
 function modelReady(){loaded=true;current=-1;playing=false;elapsed=0;tween=null;closeInfo();updateTour();lighting(elements.lighting.value)}
-window.poornaExhibition={tick,modelReady,stop};
+window.poornaExhibition={tick,modelReady,stop,getStops:()=>stops.map(x=>({...x,anchor:[...x.anchor],pose:x.pose?{position:[...x.pose.position],target:[...x.pose.target]}:undefined})),setTourStops,goToStop:(i)=>stopAt(i,false),pause};
 updateTour();
