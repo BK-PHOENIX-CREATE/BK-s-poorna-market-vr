@@ -270,12 +270,28 @@ document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement
 const xrInfoCanvas=document.createElement('canvas');xrInfoCanvas.width=512;xrInfoCanvas.height=256;
 const xrInfoCtx=xrInfoCanvas.getContext('2d'),xrInfoTexture=new THREE.CanvasTexture(xrInfoCanvas);
 xrInfoTexture.colorSpace=THREE.SRGBColorSpace;
-const xrInfoMat=new THREE.MeshBasicMaterial({map:xrInfoTexture,side:THREE.DoubleSide,depthTest:false});
-const xrInfoPanel=new THREE.Mesh(new THREE.PlaneGeometry(.25,.125),xrInfoMat);
-xrInfoPanel.position.set(0,.17,-.15);xrInfoPanel.rotation.x=-.35;xrInfoPanel.visible=false;
+// A head-locked diagnostic HUD is more reliable than a controller overlay:
+ // walls cannot overwrite it, even when the player is inside dense geometry.
+const xrInfoMat=new THREE.MeshBasicMaterial({map:xrInfoTexture,side:THREE.DoubleSide,transparent:true,depthTest:false,depthWrite:false,toneMapped:false});
+const xrInfoPanel=new THREE.Mesh(new THREE.PlaneGeometry(.36,.18),xrInfoMat);
+xrInfoPanel.renderOrder=10000;
+xrInfoPanel.frustumCulled=false;
+xrInfoPanel.visible=false;
+scene.add(xrInfoPanel);
+const xrHudOffset=new THREE.Vector3(-.25,-.19,-.82),xrHudPosition=new THREE.Vector3(),xrHudRotation=new THREE.Quaternion();
+function positionXRDiagnosticHUD(){
+ if(!renderer.xr.isPresenting||!xrInfoPanel.visible)return;
+ const xrCamera=renderer.xr.getCamera(camera);
+ const head=xrCamera.cameras?.[0]||xrCamera;
+ head.getWorldPosition(xrHudPosition);
+ head.getWorldQuaternion(xrHudRotation);
+ xrInfoPanel.position.copy(xrHudOffset).applyQuaternion(xrHudRotation).add(xrHudPosition);
+ xrInfoPanel.quaternion.copy(xrHudRotation);
+}
 let xrInfoTimer=0,xrLastGroundHit=null;
 function updateXRDiagnostics(dt,x,z,feet){
  if(!renderer.xr.isPresenting)return;
+ positionXRDiagnosticHUD();
  xrInfoTimer+=dt;if(xrInfoTimer<.35)return;xrInfoTimer=0;
  let hitCount=0,hitY=null;
  if(collisionReady){
@@ -299,7 +315,7 @@ function updateXRDiagnostics(dt,x,z,feet){
  xrInfoCtx.fillText('Ground Y: '+(hitY===null?'NONE':hitY.toFixed(2)),20,162);
  xrInfoCtx.fillText('Player Y: '+feet.toFixed(2),20,201);
  if(collisionFailure){xrInfoCtx.fillStyle='#f9ba8b';xrInfoCtx.font='17px Arial';xrInfoCtx.fillText(collisionFailure.slice(0,57),20,234)}
- else{xrInfoCtx.fillStyle='#d0c29d';xrInfoCtx.font='17px Arial';xrInfoCtx.fillText('Read this panel on right controller',20,234)}
+ else{xrInfoCtx.fillStyle='#d0c29d';xrInfoCtx.font='17px Arial';xrInfoCtx.fillText('HEADSET HUD / COLLISION DIAGNOSTIC',20,234)}
  xrInfoTexture.needsUpdate=true;
 }
 const xrFw=new THREE.Vector3(),xrRt=new THREE.Vector3(),xrQ=new THREE.Quaternion();
@@ -407,7 +423,7 @@ function moveToController(controller){
 }
 for(let i=0;i<2;i++){
  const controller=renderer.xr.getController(i);rig.add(controller);
- if(i===1)controller.add(xrInfoPanel);
+ // Diagnostic HUD is attached to the scene and follows the headset.
  const ray=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3(0,0,-1)]),new THREE.LineBasicMaterial({color:0xdac28e}));ray.scale.z=8;controller.add(ray);
  controller.addEventListener('selectstart',()=>{if(renderer.xr.isPresenting)moveToController(controller)})
 }
