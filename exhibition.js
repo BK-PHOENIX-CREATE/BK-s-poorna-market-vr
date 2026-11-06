@@ -132,6 +132,10 @@ function lighting(mode){
   renderer.toneMappingExposure=1.35;scene.environmentIntensity=.46;
   ground.material.color.set(0xd7d6c7);
  }
+ // Refresh the cached directional depth map whenever the sun position changes.
+ // Shadows remain available in desktop Walk and standalone Quest 3 VR.
+ renderer.shadowMap.needsUpdate=true;
+ sun.shadow.needsUpdate=true;
  v.status('Lighting selected: '+(mode==='golden'?'golden hour':mode==='overcast'?'soft overcast':'clear daylight'));
 }
 elements.lighting.addEventListener('change',()=>lighting(elements.lighting.value));
