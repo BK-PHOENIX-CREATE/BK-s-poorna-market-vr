@@ -56,3 +56,14 @@ The optimized geometry has original node transforms baked into world space, pres
 ## Source attribution
 
 Architectural content and panel imagery: student-provided *Pre Final Panel.pdf*, labelled **RE-DEVELOPMENT OF POORNA MARKET**. Project title, program, typologies, floors, elevations, sections and urban context are grounded in the panel. Generic narrative text is interpretive presentation copy, not a claim of independently verified site data.
+
+## Navigation modes (November 2026 update)
+
+- **Orbit**: drag to rotate the architectural model, mousewheel to zoom.
+- **Sky / Fly**: click inside viewer to lock pointer, move with WASD, rise with Space/E, descend with C/Q, hold Shift for faster movement.
+- **Walk**: click Walk after loading the actual GLB. The browser builds a local acceleration structure (three-mesh-bvh) for the model's real triangles, then follows detected walkable floor, stair and ramp surfaces at eye height. WASD walks, Shift speeds up, mouse looks around, Esc releases the cursor. Walk Mode does not allow unrestricted vertical flight.
+- **Plan**: top-down orbit and pan.
+
+### Important walk-mode limitations
+
+This is an initial geometry-aware walking controller using downward floor detection, gravity and two horizontal wall probes—not a complete character-capsule physics simulation. Complex multi-level intersections, thin barriers, and unusual SketchUp face normals may still need project-specific tuning. BVH indexing adds CPU/memory work the first time Walk is selected. The package depends on a browser-reachable `three-mesh-bvh@0.9.18` module. Test the exact market ramps and floor transitions in the live desktop browser before jury use. WebXR has its own controller locomotion and has not yet been given the desktop walk collider.
