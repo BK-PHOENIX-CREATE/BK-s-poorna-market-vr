@@ -110,19 +110,27 @@ elements.next.addEventListener('click',()=>stopAt(current+1,false));
 // OrbitControls emits start when a visitor takes manual camera control.
 orbit.addEventListener('start',()=>{stop()});
 function lighting(mode){
+ // Architectural daylight studies with balanced direct sunlight, soft sky
+ // fill and physically based reflections. Keep any imported textures intact.
  const fog=scene.fog;
  if(mode==='golden'){
-  scene.background.set(0xc8b39c);if(fog)fog.color.set(0xc8b39c);
-  sun.color.set(0xffba73);sun.intensity=3.1;sun.position.set(-75,32,20);
-  opposite.intensity=.5;ambient.intensity=.6;renderer.toneMappingExposure=1.25;ground.material.color.set(0xcdb9a5);
+  scene.background.set(0xd5c2ad);if(fog)fog.color.set(0xd5c2ad);
+  sun.color.set(0xffc28a);sun.intensity=2.6;sun.position.set(-75,32,20);
+  opposite.intensity=.38;ambient.intensity=.29;
+  renderer.toneMappingExposure=1.25;scene.environmentIntensity=.36;
+  ground.material.color.set(0xc6b9a7);
  }else if(mode==='overcast'){
-  scene.background.set(0xc5d0cd);if(fog)fog.color.set(0xc5d0cd);
-  sun.color.set(0xeaf1f5);sun.intensity=1.4;sun.position.set(-25,92,25);
-  opposite.intensity=.65;ambient.intensity=1.15;renderer.toneMappingExposure=1.4;ground.material.color.set(0xcbd1ca);
+  scene.background.set(0xcdd8da);if(fog)fog.color.set(0xcdd8da);
+  sun.color.set(0xf2f6ff);sun.intensity=1.65;sun.position.set(-25,92,25);
+  opposite.intensity=.78;ambient.intensity=.58;
+  renderer.toneMappingExposure=1.35;scene.environmentIntensity=.54;
+  ground.material.color.set(0xc9cfca);
  }else{
   scene.background.set(0xd6e4ed);if(fog)fog.color.set(0xd6e4ed);
-  sun.color.set(0xfff0d5);sun.intensity=3.1;sun.position.set(-45,80,42);
-  opposite.intensity=.8;ambient.intensity=.7;renderer.toneMappingExposure=1.4;ground.material.color.set(0xd7d6c7);
+  sun.color.set(0xfff0de);sun.intensity=3.1;sun.position.set(-45,80,42);
+  opposite.intensity=.70;ambient.intensity=.38;
+  renderer.toneMappingExposure=1.35;scene.environmentIntensity=.46;
+  ground.material.color.set(0xd7d6c7);
  }
  v.status('Lighting selected: '+(mode==='golden'?'golden hour':mode==='overcast'?'soft overcast':'clear daylight'));
 }
