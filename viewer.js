@@ -307,7 +307,7 @@ renderer.setAnimationLoop((time,xrFrame)=>{
      }
    }else orbit.update();
  }
- if(renderer.xr.isPresenting){try{updateXRLocomotion(delta,xrFrame);updateXRBackShortcut()}catch(error){if(!vrReport.error||vrReport.frames%120===0)recordXRFailure(error)}}
+ if(renderer.xr.isPresenting){try{updateXRLocomotion(delta,xrFrame);updateXRBackShortcut()}catch(error){console.error('Quest VR controller error',error)}}
  window.poornaExhibition?.tick(delta);
  window.poornaNavigation?.tick(delta);
  if(!window.poornaNavigation?.renderStereo?.())renderer.render(scene,camera);
@@ -357,98 +357,6 @@ document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement
 // Quest diagnostics on the controller: shows whether physics is actually active,
 // the ground ray's reading, and the tracked player floor elevation.
 
-// A persistent Quest diagnostics log survives exiting VR or reloading the page.
-// This avoids dependence on a floating WebXR HUD, which may be hard to see.
-const vrReportEl=$('vrReport'),vrReportText=$('vrReportText');
-let vrReport={state:'Not tested',indexedMeshes:0,floorRayHits:0,groundY:null,playerY:null,
- position:null,frames:0,error:'',updatedAt:''};
-function publishVRReport(){
- if(!vrReportEl||!vrReportText)return;
- const report=vrReport;
- vrReportText.textContent=[
-  'Physics: '+report.state,
-  'Indexed meshes: '+report.indexedMeshes,
-  'Floor ray hits: '+report.floorRayHits,
-  'Ground Y: '+(report.groundY===null?'NONE':report.groundY.toFixed(2)),
-  'Player Y: '+(report.playerY===null?'NONE':report.playerY.toFixed(2)),
-  'Position X/Z: '+(report.position?report.position.map(n=>n.toFixed(2)).join(' / '):'NONE'),
-  'Rig X/Z: '+(report.rigPosition?report.rigPosition.map(n=>n.toFixed(2)).join(' / '):'NONE'),
-  'Left stick X/Y: '+(report.leftStick?report.leftStick.map(n=>n.toFixed(2)).join(' / '):'NONE'),
-  'Updated frames: '+report.frames,
-  report.error?'Error: '+report.error:'Error: none'
- ].join('\n');
- vrReportEl.hidden=false;
- try{localStorage.setItem('poorna-quest-diagnostics',JSON.stringify(report))}catch(e){}
-}
-try{
- const previous=JSON.parse(localStorage.getItem('poorna-quest-diagnostics')||'null');
- if(previous&&typeof previous==='object'){vrReport={...vrReport,...previous};publishVRReport()}
-}catch(e){}
-$('vrReportCopy')?.addEventListener('click',()=>{
- if(navigator.clipboard?.writeText)navigator.clipboard.writeText(vrReportText.textContent).then(()=>status('VR diagnostics copied')).catch(()=>{});
- else {const range=document.createRange();range.selectNodeContents(vrReportText);const selection=getSelection();selection.removeAllRanges();selection.addRange(range)}
-});
-function recordXRFailure(error){
- vrReport.error=String(error?.stack||error?.message||error).slice(0,600);
- vrReport.state=collisionReady?'PHYSICS READY (runtime error)':'PHYSICS NOT READY (runtime error)';
- vrReport.indexedMeshes=collisionMeshes.length;
- vrReport.updatedAt=new Date().toISOString();
- publishVRReport();
- console.error('Quest locomotion diagnostics',error);
-}
-
-const xrInfoCanvas=document.createElement('canvas');xrInfoCanvas.width=512;xrInfoCanvas.height=256;
-const xrInfoCtx=xrInfoCanvas.getContext('2d'),xrInfoTexture=new THREE.CanvasTexture(xrInfoCanvas);
-xrInfoTexture.colorSpace=THREE.SRGBColorSpace;
-// A head-locked diagnostic HUD is more reliable than a controller overlay:
- // walls cannot overwrite it, even when the player is inside dense geometry.
-const xrInfoMat=new THREE.MeshBasicMaterial({map:xrInfoTexture,side:THREE.DoubleSide,transparent:true,depthTest:false,depthWrite:false,toneMapped:false});
-const xrInfoPanel=new THREE.Mesh(new THREE.PlaneGeometry(.36,.18),xrInfoMat);
-xrInfoPanel.renderOrder=10000;
-xrInfoPanel.frustumCulled=false;
-xrInfoPanel.visible=false;
-scene.add(xrInfoPanel);
-const xrHudOffset=new THREE.Vector3(-.25,-.19,-.82),xrHudPosition=new THREE.Vector3(),xrHudRotation=new THREE.Quaternion();
-function positionXRDiagnosticHUD(){
- if(!renderer.xr.isPresenting||!xrInfoPanel.visible)return;
- rig.updateWorldMatrix(true,false);
- xrHudPosition.copy(xrTrackedLocal).applyMatrix4(rig.matrixWorld);
- rig.getWorldQuaternion(xrHudRotation).multiply(xrTrackedOrientation);
- xrInfoPanel.position.copy(xrHudOffset).applyQuaternion(xrHudRotation).add(xrHudPosition);
- xrInfoPanel.quaternion.copy(xrHudRotation);
-}
-let xrInfoTimer=0,xrLastGroundHit=null;
-function updateXRDiagnostics(dt,x,z,feet){
- if(!renderer.xr.isPresenting)return;
- positionXRDiagnosticHUD();
- xrInfoTimer+=dt;if(xrInfoTimer<.35)return;xrInfoTimer=0;
- let hitCount=0,hitY=null;
- if(collisionReady){
-  downRay.set(new THREE.Vector3(x,feet+1.3,z),DOWN);
-  downRay.near=0;downRay.far=3.2;downRay.firstHitOnly=false;
-  const hits=downRay.intersectObjects(collisionMeshes,false);
-  hitCount=hits.length;
-  for(const hit of hits){
-   if(!hit.face)continue;
-   NORMAL.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
-   if(Math.abs(NORMAL.y)>=SLOPE){hitY=hit.point.y;break}
-  }
- }
- xrLastGroundHit=hitY;
- vrReport={state:collisionReady?'PHYSICS READY':'PHYSICS NOT READY',indexedMeshes:collisionMeshes.length,floorRayHits:hitCount,groundY:hitY,playerY:feet,position:[x,z],rigPosition:[rig.position.x,rig.position.z],leftStick:vrReport.leftStick,frames:vrReport.frames+1,error:collisionFailure||vrReport.error,updatedAt:new Date().toISOString()};
- publishVRReport();
- xrInfoCtx.fillStyle='#14251b';xrInfoCtx.fillRect(0,0,512,256);
- xrInfoCtx.fillStyle=collisionReady?'#9ee0af':'#f8bd8e';
- xrInfoCtx.font='bold 29px Arial';xrInfoCtx.fillText(collisionReady?'PHYSICS READY':'PHYSICS NOT READY',20,42);
- xrInfoCtx.fillStyle='#ffffff';xrInfoCtx.font='24px Arial';
- xrInfoCtx.fillText('Indexed meshes: '+collisionMeshes.length,20,84);
- xrInfoCtx.fillText('Floor ray hits: '+hitCount,20,123);
- xrInfoCtx.fillText('Ground Y: '+(hitY===null?'NONE':hitY.toFixed(2)),20,162);
- xrInfoCtx.fillText('Player Y: '+feet.toFixed(2),20,201);
- if(collisionFailure){xrInfoCtx.fillStyle='#f9ba8b';xrInfoCtx.font='17px Arial';xrInfoCtx.fillText(collisionFailure.slice(0,57),20,234)}
- else{xrInfoCtx.fillStyle='#d0c29d';xrInfoCtx.font='17px Arial';xrInfoCtx.fillText('HEADSET HUD / COLLISION DIAGNOSTIC',20,234)}
- xrInfoTexture.needsUpdate=true;
-}
 const xrFw=new THREE.Vector3(),xrRt=new THREE.Vector3(),xrQ=new THREE.Quaternion();
 const xrHeadA=new THREE.Vector3(),xrHeadB=new THREE.Vector3(),xrUp=new THREE.Vector3(0,1,0);
 const xrWallNormal=new THREE.Vector3();
@@ -513,11 +421,10 @@ function updateXRLocomotion(dt,xrFrame){
   else if(src.handedness==='right')right=src;
  }
  const walk=getXRStick(left),turn=getXRStick(right);
- vrReport.leftStick=[walk.x,walk.y];
  const trackedHead=getTrackedHeadPose(xrFrame);
  if(!trackedHead){
   xrPoseMissing++;
-  if(xrPoseMissing===90)recordXRFailure('WebXR viewer pose unavailable for 90 frames');
+  if(xrPoseMissing===90)console.warn('Quest viewer pose unavailable for 90 frames');
   return;
  }
  xrPoseMissing=0;
@@ -544,7 +451,6 @@ function updateXRLocomotion(dt,xrFrame){
  if(xrFw.lengthSq()<.00001)xrFw.set(0,0,-1);
  xrRt.crossVectors(xrFw,xrUp).normalize();
  const magnitude=Math.min(1,Math.hypot(walk.x,walk.y));
- const previousX=trackedHead.x,previousZ=trackedHead.z;
  let dx=0,dz=0;
  if(magnitude>.16){
   const adjusted=(magnitude-.16)/.84;
@@ -554,8 +460,6 @@ function updateXRLocomotion(dt,xrFrame){
  }
  if(collisionReady)xrGroundFollow(trackedHead,dx,dz,dt);
  // Diagnostics use the tracked world position *after* the rig moved.
- const newHead=getTrackedHeadPose(xrFrame);
- updateXRDiagnostics(dt,newHead?.x??previousX,newHead?.z??previousZ,rig.position.y);
  const analog=Math.abs(turn.x)<.16?0:Math.sign(turn.x)*(Math.abs(turn.x)-.16)/.84;
  xrTurnVelocity=THREE.MathUtils.damp(xrTurnVelocity,-analog*XR_TURN_RATE,XR_TURN_RESPONSE,dt);
  if(Math.abs(xrTurnVelocity)>.001)xrSmoothTurn(null,xrTurnVelocity*dt,xrFrame);
@@ -573,23 +477,18 @@ xrBackCtx.textAlign='center';xrBackCtx.textBaseline='middle';
 xrBackCtx.fillText('← BACK / EXIT VR',256,80);
 const xrBackTexture=new THREE.CanvasTexture(xrBackCanvas);
 xrBackTexture.colorSpace=THREE.SRGBColorSpace;
-const xrBackButton=new THREE.Mesh(new THREE.PlaneGeometry(.44,.1375),
+const xrBackButton=new THREE.Mesh(new THREE.PlaneGeometry(.308,.09625),
  new THREE.MeshBasicMaterial({map:xrBackTexture,side:THREE.DoubleSide,depthTest:false,depthWrite:false,toneMapped:false}));
 xrBackButton.name='Exit VR to website';
 xrBackButton.renderOrder=11000;xrBackButton.frustumCulled=false;xrBackButton.visible=false;
-scene.add(xrBackButton);
-const xrBackOffset=new THREE.Vector3(.22,-.29,-.85),xrBackHead=new THREE.Vector3();
-const xrBackQuat=new THREE.Quaternion(),xrBackRay=new THREE.Raycaster();
+// The minimap is on controller index 0 at (0,.11,-.15), tilted -0.35.
+ // Keep Back below the minimap so it stays out of the headset's central view.
+xrBackButton.position.set(0,-.11,-.15);
+xrBackButton.rotation.x=-.35;
+renderer.xr.getController(0).add(xrBackButton);
+const xrBackRay=new THREE.Raycaster();
 const xrBackRotation=new THREE.Matrix4(),xrBackForward=new THREE.Vector3(0,0,-1);
 let xrBackButtonHeld=false;
-function positionXRBackButton(){
- if(!renderer.xr.isPresenting||!xrBackButton.visible)return;
- rig.updateWorldMatrix(true,false);
- xrBackHead.copy(xrTrackedLocal).applyMatrix4(rig.matrixWorld);
- rig.getWorldQuaternion(xrBackQuat).multiply(xrTrackedOrientation);
- xrBackButton.position.copy(xrBackOffset).applyQuaternion(xrBackQuat).add(xrBackHead);
- xrBackButton.quaternion.copy(xrBackQuat);xrBackButton.updateMatrixWorld(true);
-}
 async function exitQuestVR(){
  const session=renderer.xr.getSession();
  if(!session)return;
@@ -599,7 +498,6 @@ async function exitQuestVR(){
 }
 function selectVRBack(controller){
  if(!renderer.xr.isPresenting||!xrBackButton.visible)return false;
- positionXRBackButton();
  controller.updateMatrixWorld(true);
  xrBackRotation.identity().extractRotation(controller.matrixWorld);
  xrBackRay.ray.origin.setFromMatrixPosition(controller.matrixWorld);
@@ -610,7 +508,6 @@ function selectVRBack(controller){
 }
 function updateXRBackShortcut(){
  if(!renderer.xr.isPresenting)return;
- positionXRBackButton();
  const right=Array.from(renderer.xr.getSession()?.inputSources||[]).find(source=>source.handedness==='right');
  const down=!!right?.gamepad?.buttons?.[5]?.pressed;
  if(down&&!xrBackButtonHeld)void exitQuestVR();
@@ -657,8 +554,8 @@ for(let i=0;i<2;i++){
  const ray=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3(0,0,-1)]),new THREE.LineBasicMaterial({color:0xdac28e}));ray.scale.z=8;controller.add(ray);
  controller.addEventListener('selectstart',()=>{if(renderer.xr.isPresenting&&!selectVRBack(controller))moveToController(controller)})
 }
-renderer.xr.addEventListener('sessionstart',()=>{xrBackButton.visible=true;xrBackButtonHeld=false;vrReport={state:'Starting VR',indexedMeshes:collisionMeshes.length,floorRayHits:0,groundY:null,playerY:null,position:null,frames:0,error:'',updatedAt:new Date().toISOString()};publishVRReport();xrInfoPanel.visible=true;xrTurnVelocity=0;vrWalkState.velocity=0;xrPoseMissing=0;xrSpawnPending=true;rig.rotation.y=0;buildWalkPhysics().then(ok=>{if(ok&&renderer.xr.isPresenting)status('Quest 3 capsule collision ready: walk on ramps & floors; hold right stick to turn');});window.poornaNavigation?.vrStart();window.poornaExhibition?.stop();rig.position.copy(entranceSpawn().position);status('Quest 3: left joystick walks · right joystick smooth turning · trigger teleports.');tag.textContent='IMMERSIVE VR ACTIVE'});
-renderer.xr.addEventListener('sessionend',()=>{xrBackButton.visible=false;xrBackButtonHeld=false;vrReport.state=vrReport.frames?'VR ended — last readings':'VR ended — no diagnostic samples';publishVRReport();xrInfoPanel.visible=false;window.poornaNavigation?.vrEnd();rig.position.set(0,0,0);tag.textContent=modelLoaded?'ACTUAL MARKET MODEL LOADED':'MODEL READY TO LOAD';setMode('orbit');status('Exited immersive VR mode')});
+renderer.xr.addEventListener('sessionstart',()=>{xrBackButton.visible=true;xrBackButtonHeld=false;xrTurnVelocity=0;vrWalkState.velocity=0;xrPoseMissing=0;xrSpawnPending=true;rig.rotation.y=0;buildWalkPhysics().then(ok=>{if(ok&&renderer.xr.isPresenting)status('Quest 3 capsule collision ready: walk on ramps & floors; hold right stick to turn');});window.poornaNavigation?.vrStart();window.poornaExhibition?.stop();rig.position.copy(entranceSpawn().position);status('Quest 3: left joystick walks · right joystick smooth turning · trigger teleports.');tag.textContent='IMMERSIVE VR ACTIVE'});
+renderer.xr.addEventListener('sessionend',()=>{xrBackButton.visible=false;xrBackButtonHeld=false;window.poornaNavigation?.vrEnd();rig.position.set(0,0,0);tag.textContent=modelLoaded?'ACTUAL MARKET MODEL LOADED':'MODEL READY TO LOAD';setMode('orbit');status('Exited immersive VR mode')});
 $('vrEnterBtn').addEventListener('click',async()=>{
  if(!modelLoaded){notice('Load the actual market model before entering VR.');return}
  if(!window.isSecureContext){notice('Immersive VR requires HTTPS. Deploy the site to a secure URL.');return}
