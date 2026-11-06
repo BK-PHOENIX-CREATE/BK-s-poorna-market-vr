@@ -41,6 +41,20 @@ const keys=new Set();let yaw=0,pitch=0;
 const text=$('viewerStatus'),tag=$('modelState'),modeLabel=$('viewModeName');
 function status(s){text.textContent=s}
 function notice(s){(window.marketToast||console.warn)(s)}
+// Shared entrance-side corner spawn for desktop Walk and immersive Quest VR.
+// The min-X / max-Z corner shows the long entrance façade receding to the
+// right, as in the project's preferred exterior walkthrough screenshot.
+function entranceSpawn(){
+ const b=modelBounds,sz=b.getSize(new THREE.Vector3());
+ const position=new THREE.Vector3(b.min.x-Math.max(3,sz.x*.035),b.min.y,b.max.z+Math.max(6,sz.z*.11));
+ const target=new THREE.Vector3(b.min.x+sz.x*.52,b.min.y+EYE,b.max.z-sz.z*.20);
+ return {position,target};
+}
+function entranceYaw(){
+ const {position,target}=entranceSpawn();
+ const direction=target.sub(position);
+ return Math.atan2(-direction.x,-direction.z);
+}
 function makeCamera(mode){
  const box=modelBounds,size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3());
  const r=Math.max(25,size.x,size.z),h=Math.max(9,size.y);
@@ -52,8 +66,9 @@ function makeCamera(mode){
  }else if(mode==='plan'){
    camera.position.set(center.x,Math.max(90,r*1.65),center.z+.01);camera.up.set(0,0,-1);camera.lookAt(center.x,0,center.z);orbit.target.set(center.x,0,center.z);orbit.enableRotate=false;orbit.enabled=true;orbit.update();modeLabel.textContent='ARCHITECTURAL / PLAN';
  }else{
-   camera.position.set(mode==='sky'?center.x+r*.8:center.x,mode==='sky'?Math.max(h+12,r*.7):EYE,mode==='sky'?center.z+r*.85:box.max.z+4);
-   const target=new THREE.Vector3(center.x,mode==='sky'?Math.max(3,h*.4):EYE,center.z);
+   const start=entranceSpawn();
+   camera.position.set(mode==='sky'?center.x+r*.8:start.position.x,mode==='sky'?Math.max(h+12,r*.7):start.position.y+EYE,mode==='sky'?center.z+r*.85:start.position.z);
+   const target=mode==='sky'?new THREE.Vector3(center.x,Math.max(3,h*.4),center.z):start.target;
    const dir=target.sub(camera.position).normalize();
    yaw=Math.atan2(-dir.x,-dir.z);pitch=mode==='sky'?Math.asin(THREE.MathUtils.clamp(dir.y,-1,1)):0;
    camera.rotation.order='YXZ';camera.rotation.set(pitch,yaw,0);orbit.enabled=false;
@@ -370,7 +385,7 @@ const XR_TURN_RATE=THREE.MathUtils.degToRad(75),XR_TURN_RESPONSE=11;
 // reference-space coordinates if their world matrices have not updated yet.
 const xrTrackedLocal=new THREE.Vector3(),xrTrackedWorld=new THREE.Vector3();
 const xrTrackedOrientation=new THREE.Quaternion(),xrRigOrientation=new THREE.Quaternion();
-let xrPoseMissing=0;
+let xrPoseMissing=0,xrSpawnPending=false;
 function getTrackedHeadPose(frame){
  const space=renderer.xr.getReferenceSpace();
  const pose=frame&&space?frame.getViewerPose(space):null;
@@ -432,6 +447,25 @@ function updateXRLocomotion(dt,xrFrame){
   return;
  }
  xrPoseMissing=0;
+ // Place the *tracked headset* at the common entrance position and rotate
+ // its initial facing direction toward the long façade. Run once after
+ // WebXR has delivered a valid local-floor pose.
+ if(xrSpawnPending){
+  xrSpawnPending=false;
+  const spawn=entranceSpawn();
+  const forward=new THREE.Vector3(0,0,-1).applyQuaternion(xrQ);
+  const currentYaw=Math.atan2(-forward.x,-forward.z);
+  rig.rotation.y+=entranceYaw()-currentYaw;
+  const adjusted=getTrackedHeadPose(xrFrame);
+  if(adjusted){
+   rig.position.x+=spawn.position.x-adjusted.x;
+   rig.position.z+=spawn.position.z-adjusted.z;
+   const groundHeight=collisionReady?floorAt(spawn.position.x,spawn.position.z,spawn.position.y,Math.max(STEP,1.1),2.0):null;
+   rig.position.y=groundHeight??spawn.position.y;
+   vrWalkState.velocity=0;
+  }
+  getTrackedHeadPose(xrFrame);
+ }
  xrFw.set(0,0,-1).applyQuaternion(xrQ).setY(0).normalize();
  if(xrFw.lengthSq()<.00001)xrFw.set(0,0,-1);
  xrRt.crossVectors(xrFw,xrUp).normalize();
@@ -494,7 +528,7 @@ for(let i=0;i<2;i++){
  const ray=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3(0,0,-1)]),new THREE.LineBasicMaterial({color:0xdac28e}));ray.scale.z=8;controller.add(ray);
  controller.addEventListener('selectstart',()=>{if(renderer.xr.isPresenting)moveToController(controller)})
 }
-renderer.xr.addEventListener('sessionstart',()=>{vrReport={state:'Starting VR',indexedMeshes:collisionMeshes.length,floorRayHits:0,groundY:null,playerY:null,position:null,frames:0,error:'',updatedAt:new Date().toISOString()};publishVRReport();xrInfoPanel.visible=true;xrTurnVelocity=0;vrWalkState.velocity=0;xrPoseMissing=0;rig.rotation.y=0;buildWalkPhysics().then(ok=>{if(ok&&renderer.xr.isPresenting)status('Quest 3 capsule collision ready: walk on ramps & floors; hold right stick to turn');});window.poornaNavigation?.vrStart();window.poornaExhibition?.stop();rig.position.set(0,modelBounds.min.y,modelBounds.max.z+4);status('Quest 3: left joystick walks · right joystick smooth turning · trigger teleports.');tag.textContent='IMMERSIVE VR ACTIVE'});
+renderer.xr.addEventListener('sessionstart',()=>{vrReport={state:'Starting VR',indexedMeshes:collisionMeshes.length,floorRayHits:0,groundY:null,playerY:null,position:null,frames:0,error:'',updatedAt:new Date().toISOString()};publishVRReport();xrInfoPanel.visible=true;xrTurnVelocity=0;vrWalkState.velocity=0;xrPoseMissing=0;xrSpawnPending=true;rig.rotation.y=0;buildWalkPhysics().then(ok=>{if(ok&&renderer.xr.isPresenting)status('Quest 3 capsule collision ready: walk on ramps & floors; hold right stick to turn');});window.poornaNavigation?.vrStart();window.poornaExhibition?.stop();rig.position.copy(entranceSpawn().position);status('Quest 3: left joystick walks · right joystick smooth turning · trigger teleports.');tag.textContent='IMMERSIVE VR ACTIVE'});
 renderer.xr.addEventListener('sessionend',()=>{vrReport.state=vrReport.frames?'VR ended — last readings':'VR ended — no diagnostic samples';publishVRReport();xrInfoPanel.visible=false;window.poornaNavigation?.vrEnd();rig.position.set(0,0,0);tag.textContent=modelLoaded?'ACTUAL MARKET MODEL LOADED':'MODEL READY TO LOAD';setMode('orbit');status('Exited immersive VR mode')});
 $('vrEnterBtn').addEventListener('click',async()=>{
  if(!modelLoaded){notice('Load the actual market model before entering VR.');return}
