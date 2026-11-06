@@ -33,10 +33,10 @@ function rebuildHotspots(){
  });
 }
 rebuildHotspots();
-function point(normalized){
+function point(normalized,world=false){
  const box=v.getBounds(),size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3());
  if(!normalized)return center;
- if(normalized.length===3&&normalized.some(n=>Math.abs(n)>1.1))return new THREE.Vector3(...normalized);
+ if(world)return new THREE.Vector3(...normalized);
  return new THREE.Vector3(center.x+normalized[0]*size.x,center.y+normalized[1]*size.y,center.z+normalized[2]*size.z);
 }
 function showInfo(i){
@@ -148,7 +148,7 @@ function tick(dt){
   buttons.forEach(b=>b.hidden=true);return;
  }
  stops.forEach((stop,i)=>{
-  temp.copy(point(stop.anchor)).project(camera);
+  temp.copy(point(stop.anchor,stop.worldAnchor)).project(camera);
   const b=buttons[i],outside=temp.z>1||temp.z< -1||Math.abs(temp.x)>.98||Math.abs(temp.y)>.96;
   b.hidden=outside;if(!outside){b.style.left=((temp.x*.5+.5)*width)+'px';b.style.top=((-temp.y*.5+.5)*height)+'px'}
  });
@@ -156,7 +156,7 @@ function tick(dt){
 function setTourStops(next){if(!Array.isArray(next)||next.length>50)return false;
  const valid=next.every(item=>item&&typeof item.id==='string'&&typeof item.title==='string'&&typeof item.desc==='string'&&Array.isArray(item.anchor)&&item.anchor.length===3);
  if(!valid)return false;
- stops=next.map((item,i)=>({id:String(item.id).slice(0,60),title:String(item.title).slice(0,75),desc:String(item.desc).slice(0,500),label:String(item.label||item.title).slice(0,75),note:String(item.note||item.desc).slice(0,500),anchor:item.anchor.map(Number),pose:item.pose&&Array.isArray(item.pose.position)&&Array.isArray(item.pose.target)?{position:item.pose.position.map(Number),target:item.pose.target.map(Number)}:undefined}));
+ stops=next.map((item,i)=>({id:String(item.id).slice(0,60),title:String(item.title).slice(0,75),desc:String(item.desc).slice(0,500),label:String(item.label||item.title).slice(0,75),note:String(item.note||item.desc).slice(0,500),anchor:item.anchor.map(Number),worldAnchor:!!item.worldAnchor,pose:item.pose&&Array.isArray(item.pose.position)&&Array.isArray(item.pose.target)?{position:item.pose.position.map(Number),target:item.pose.target.map(Number)}:undefined}));
  current=-1;playing=false;tween=null;closeInfo();rebuildHotspots();
  elements.views.innerHTML='<option value="">Choose a saved view…</option>';
  stops.forEach(stop=>{const opt=document.createElement('option');opt.value=stop.id;opt.textContent=stop.title;elements.views.appendChild(opt)});
