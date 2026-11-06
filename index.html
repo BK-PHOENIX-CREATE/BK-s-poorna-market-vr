@@ -16,6 +16,7 @@
   </script>
   <script src="/main.js" defer></script>
   <script type="module" src="/viewer.js"></script>
+  <script type="module" src="/exhibition.js"></script>
 </head>
 <body>
 <div class="progress-bar" id="scrollBar"></div>
@@ -72,10 +73,18 @@
         <div class="viewport" id="viewport">
           <div class="canvas-mount" id="canvasMount" aria-label="Interactive 3D scene" tabindex="0"></div>
           <div class="viewer-splash" id="viewerSplash"><div class="splash-hatch"></div><div class="splash-content"><span class="splash-eyebrow">THE PHYSICAL SPACE · IN DIGITAL FORM</span><h3>Walk through<br><em>the proposal.</em></h3><p>Explore the optimized 3D model of Poorna Market. The first load downloads about 79 MB; a stable connection and desktop browser are recommended.</p><button id="loadModelBtn" class="button light-button">Load the actual market model <span>↗</span></button><div class="load-progress" id="loadProgress" hidden><span id="loadProgressText">Preparing geometry…</span><div class="progress-track"><span id="loadProgressBar"></span></div></div></div><span class="splash-corner">MODEL / SVP MARKET</span></div>
+          <div class="ex-hotspots" id="exHotspots" aria-label="Architectural hotspots"></div>
+          <aside class="ex-info" id="exInfo" hidden><button id="exInfoClose" aria-label="Close architecture information">×</button><small id="exInfoIndex">ARCHITECTURAL INSIGHT</small><h3 id="exInfoTitle"></h3><p id="exInfoBody"></p></aside>
           <div class="viewer-annotation" id="viewerAnnotation"><span class="live-indicator"></span> <span id="viewModeName">PERSPECTIVE / ORBIT</span></div>
           <div class="compass" aria-hidden="true">N<br><span>↑</span></div>
           <div class="viewport-actions"><button id="resetViewBtn" title="Reset camera">⟲ <span>Reset view</span></button><button id="helpBtn" title="Viewer controls">? <span>Controls</span></button></div>
           <div class="viewer-help" id="viewerHelp" hidden><strong>DESKTOP CONTROLS</strong><p>Orbit: drag · Zoom: scroll</p><p><b>Sky:</b> WASD fly · Space/E rise · C/Q descend</p><p><b>Walk:</b> WASD follow actual floors and ramps · gravity and wall checks</p><p>Look: click viewer and move mouse · Shift: faster · Esc: release cursor</p><p>Orbit: right-drag to pan, wheel to zoom</p><p>VR: use headset browser and controllers</p><button id="closeHelpBtn">Close ×</button></div>
+        </div>
+        <div class="ex-controls">
+          <div class="ex-controls-top"><label for="exViews">ARCHITECTURAL VIEWS</label><select id="exViews"><option value="">Choose a saved view…</option><option value="arrival">Arrival & street edge</option><option value="overview">Market overview</option><option value="plan">Roof & layout</option><option value="interior">Market perspective</option><option value="facade">Building frontage</option></select>
+          <label for="exLighting">DAYLIGHT STUDY</label><select id="exLighting"><option value="day">Clear daylight</option><option value="golden">Golden hour</option><option value="overcast">Overcast</option></select>
+          <button id="exToggleHotspots" type="button" aria-pressed="true">◉ Hotspots on</button></div>
+          <div class="ex-tour"><div class="ex-tour-copy"><small>GUIDED ARCHITECTURAL TOUR</small><strong id="exTourTitle">Five moments through Poorna Market</strong><span id="exTourDesc">Load the model to begin the journey.</span></div><div class="ex-tour-actions"><span id="exTourCount">00 / 05</span><button id="exPrev" title="Previous stop" disabled>←</button><button id="exPlay">▶ Start tour</button><button id="exNext" title="Next stop" disabled>→</button></div></div>
         </div>
         <div class="viewer-toolbar"><div class="mode-tabs" role="group" aria-label="View mode"><button class="mode-tab selected" data-mode="orbit">◉ <span>Orbit</span></button><button class="mode-tab" data-mode="sky">☁ <span>Sky / Fly</span></button><button class="mode-tab" data-mode="walk">♙ <span>Walk</span></button><button class="mode-tab" data-mode="plan">▦ <span>Plan view</span></button></div><div class="viewer-ctas"><button id="fileButton" class="file-select">＋ Upload GLB</button><input id="modelFile" type="file" accept=".glb,model/gltf-binary" hidden /><button id="vrEnterBtn" class="vr-button">◫ &nbsp; Enter VR <span>↗</span></button></div></div>
         <div class="viewer-footer"><span id="viewerStatus" role="status">Your architectural model is ready to load.</span><span>DESKTOP / WEBXR · REAL MODEL</span></div>
