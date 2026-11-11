@@ -7,6 +7,10 @@ const $=id=>document.getElementById(id),v=window.poornaViewer;
 if(!v)throw new Error('Poorna viewer not initialized');
 const {scene,camera,renderer}=v;
 const panel=$('poornaMinimap'),canvas=$('minimapCanvas'),ctx=canvas.getContext('2d',{alpha:false});
+const mapTypography=getComputedStyle(panel);
+const mapFont=mapTypography.fontFamily;
+const mapLabelSize=10;
+const mapTitleSize=mapLabelSize*Number(mapTypography.getPropertyValue('--golden-ratio'));
 const base=document.createElement('canvas');base.width=256;base.height=256;
 const baseCtx=base.getContext('2d',{alpha:false});
 const m={size:256,pad:17,minX:-50,maxX:50,minZ:-50,maxZ:50};
@@ -47,12 +51,12 @@ function buildBase(){
    baseCtx.lineWidth=.65;baseCtx.fill();baseCtx.stroke();
  }
  baseCtx.strokeStyle='#263a2f';baseCtx.lineWidth=1;baseCtx.strokeRect(m.pad,m.pad,256-2*m.pad,256-2*m.pad);
- baseCtx.fillStyle='#263a2f';baseCtx.font='bold 11px Arial';baseCtx.fillText('POORNA / PLAN',17,12);
  ready=true;panel.hidden=false;
 }
 function drawPosition(){
  if(!ready)return;
  ctx.drawImage(base,0,0);
+ ctx.fillStyle='#263a2f';ctx.font=`700 ${mapTitleSize}px ${mapFont}`;ctx.fillText('POORNA / PLAN',17,14);
  if(renderer.xr.isPresenting)renderer.xr.getCamera(camera).getWorldPosition(marker);
  else camera.getWorldPosition(marker);
  const x=Math.min(247,Math.max(9,scaleX(marker.x))),y=Math.min(247,Math.max(9,scaleZ(marker.z)));
@@ -62,7 +66,7 @@ function drawPosition(){
  ctx.save();ctx.translate(x,y);ctx.rotate(angle);
  ctx.fillStyle='#d35936';ctx.strokeStyle='#fff';ctx.lineWidth=2;
  ctx.beginPath();ctx.moveTo(0,-11);ctx.lineTo(7,8);ctx.lineTo(0,4);ctx.lineTo(-7,8);ctx.closePath();ctx.fill();ctx.stroke();ctx.restore();
- ctx.fillStyle='#243d31';ctx.font='bold 9px Arial';ctx.fillText('YOU',Math.min(222,x+10),Math.max(20,y-12));
+ ctx.fillStyle='#243d31';ctx.font=`700 ${mapLabelSize}px ${mapFont}`;ctx.fillText('YOU',Math.min(222,x+10),Math.max(20,y-12));
  $('minimapLevel').textContent='● ELEV. '+Math.max(0,marker.y-1.7).toFixed(1)+' m';
  if(vrTexture)vrTexture.needsUpdate=true;
 }

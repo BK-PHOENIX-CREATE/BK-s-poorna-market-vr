@@ -9,6 +9,11 @@ window.market3dReady=true;
 const $=(id)=>document.getElementById(id);
 const mount=$('canvasMount');
 if (!mount) throw new Error('Missing model canvas');
+const viewerTypography=getComputedStyle(mount);
+const viewerFont=viewerTypography.fontFamily;
+const typeRatio=Number(viewerTypography.getPropertyValue('--golden-ratio'));
+const vrBodySize=28;
+const vrHeadingSize=vrBodySize*typeRatio;
 const scene=new THREE.Scene();
 scene.background=new THREE.Color(0xd6e4ed);
 scene.fog=new THREE.Fog(0xd6e4ed,190,520);
@@ -21,7 +26,7 @@ const isPortableDevice=window.matchMedia?.('(pointer: coarse)')?.matches||false;
 renderer.setPixelRatio(Math.min(devicePixelRatio,isPortableDevice?1.25:1.65));
 renderer.outputColorSpace=THREE.SRGBColorSpace;
 renderer.toneMapping=THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure=1.45;
+renderer.toneMappingExposure=1.15;
 renderer.xr.enabled=true;
 renderer.xr.setReferenceSpaceType('local-floor');
 renderer.shadowMap.enabled=true;
@@ -32,24 +37,24 @@ mount.appendChild(renderer.domElement);
 const orbit=new OrbitControls(camera,renderer.domElement);
 orbit.enableDamping=true;orbit.dampingFactor=.07;orbit.maxPolarAngle=Math.PI*.49;orbit.minDistance=3;orbit.maxDistance=220;
 orbit.target.set(0,6,0);
-const skylight=new THREE.HemisphereLight(0xf2f7ff,0x777369,1.55);
+const skylight=new THREE.HemisphereLight(0xe7eff3,0x8b7050,1.35);
 scene.add(skylight);
-const ambient=new THREE.AmbientLight(0xffffff,.38);scene.add(ambient);
-const sun=new THREE.DirectionalLight(0xfff0de,3.1);
-sun.position.set(-45,80,42);
+const ambient=new THREE.AmbientLight(0xffffff,.12);scene.add(ambient);
+const sun=new THREE.DirectionalLight(0xffdfb2,2.8);
+const sunDirection=new THREE.Vector3(-12,22,33).normalize();
+sun.position.copy(sunDirection).multiplyScalar(120);
 sun.castShadow=true;
 sun.shadow.mapSize.set(2048,2048);
 sun.shadow.camera.near=.5;sun.shadow.camera.far=450;
-sun.shadow.bias=-.00018;sun.shadow.normalBias=.025;
-sun.shadow.radius=2.6;
+sun.shadow.normalBias=.025;
 scene.add(sun);scene.add(sun.target);
-const opposite=new THREE.DirectionalLight(0xd6e6ff,.70);opposite.position.set(35,30,-35);scene.add(opposite);
+const opposite=new THREE.DirectionalLight(0xd6e6ff,.16);opposite.position.set(35,30,-35);scene.add(opposite);
 const ground=new THREE.Mesh(new THREE.PlaneGeometry(520,520),new THREE.MeshStandardMaterial({color:0xd7d6c7,roughness:1}));ground.rotation.x=-Math.PI/2;ground.position.y=-.08;ground.receiveShadow=true;scene.add(ground);
 /* Architectural sun/shadows across desktop Walk and Quest 3.
    Model geometry and the tested VR locomotion physics remain untouched.
    Static sun shadows are cached instead of re-rendered at headset frame rate. */
 let generatedEnvironment=null,environmentTarget=null;
-const renderingProfile={mode:'desktop',environmentReady:false,shadowEnabled:true};
+scene.environmentIntensity=.32;
 // Shadow maps must be rebuilt when the light or quality profile changes.
 // Lower resolution and a one-time shadow render keep Quest 3 performant.
 function requestSunShadowUpdate(){
@@ -58,31 +63,13 @@ function requestSunShadowUpdate(){
 function setRenderingProfile(next){
  const immersive=next==='vr';
  const portable=next==='mobile';
- const wasProfile=renderingProfile.mode;
- renderingProfile.mode=next;
- renderingProfile.shadowEnabled=true;
- renderer.shadowMap.enabled=true;
- sun.castShadow=true;
  // WebXR manages its own framebuffer dimensions: never resize during VR.
  if(!immersive)renderer.setPixelRatio(Math.min(devicePixelRatio,portable?1.25:1.65));
- const resolution=immersive?768:(portable?1024:2048);
+ const resolution=Math.min(renderer.capabilities.maxTextureSize,immersive?1536:(portable?1024:3072));
  if(sun.shadow.mapSize.x!==resolution||sun.shadow.mapSize.y!==resolution){
   sun.shadow.mapSize.set(resolution,resolution);
   if(sun.shadow.map){sun.shadow.map.dispose();sun.shadow.map=null;}
  }
- sun.shadow.radius=immersive?1.6:2.6;
- if(immersive){
-  renderer.toneMappingExposure=1.32;
-  scene.environmentIntensity=.32;
- }else{
-  renderer.toneMappingExposure=1.35;
-  scene.environmentIntensity=portable?.35:.46;
- }
- if(model)model.traverse(o=>{
-  if(!o.isMesh)return;
-  o.castShadow=o.userData.architecturalShadowCaster!==false;
-  o.receiveShadow=true;
- });
  // Sun, mesh and ground are static: cache the light-depth pass after it
  // renders once, rather than generating it on every headset frame.
  requestSunShadowUpdate();
@@ -114,25 +101,49 @@ function setupArchitecturalMaterials(root){
    }
   }
   // Transparent panels should not cast solid-looking architectural shadows.
-  mesh.userData.architecturalShadowCaster=materials.some(mat=>mat&&mat.opacity>=.95&&!mat.transparent);
+  mesh.castShadow=materials.some(mat=>mat&&mat.opacity>=.95&&!mat.transparent);
+  mesh.receiveShadow=true;
  });
 }
 function configureArchitecturalSun(){
- if(!model)return;
- const size=modelBounds.getSize(new THREE.Vector3());
  const center=modelBounds.getCenter(new THREE.Vector3());
+ const size=modelBounds.getSize(new THREE.Vector3());
  sun.target.position.copy(center);
+ sun.position.copy(center).addScaledVector(sunDirection,size.length()/2+12);
+ sun.updateMatrixWorld(true);
  sun.target.updateMatrixWorld(true);
- // Keep both the building and its cast shadows within the light's ortho frustum.
- const radius=Math.min(190,Math.max(size.x,size.z)*.72+18);
- sun.shadow.camera.left=-radius;
- sun.shadow.camera.right=radius;
- sun.shadow.camera.top=radius;
- sun.shadow.camera.bottom=-radius;
- sun.shadow.camera.far=Math.max(270,size.y+210);
- sun.shadow.camera.updateProjectionMatrix();
- sun.shadow.needsUpdate=true;
+ const shadowCamera=sun.shadow.camera;
+ shadowCamera.position.copy(sun.position);
+ shadowCamera.lookAt(center);
+ shadowCamera.updateMatrixWorld(true);
+
+ // Fit the orthographic map to the market in light space. The projection
+ // of a caster and its shadow on the ground share the same light-space X/Y.
+ const lightBounds=new THREE.Box3();
+ const corner=new THREE.Vector3();
+ for(const x of [modelBounds.min.x,modelBounds.max.x]){
+  for(const y of [modelBounds.min.y,modelBounds.max.y]){
+   for(const z of [modelBounds.min.z,modelBounds.max.z]){
+    lightBounds.expandByPoint(corner.set(x,y,z).applyMatrix4(shadowCamera.matrixWorldInverse));
+   }
+  }
+ }
+ const padding=3;
+ shadowCamera.left=lightBounds.min.x-padding;
+ shadowCamera.right=lightBounds.max.x+padding;
+ shadowCamera.bottom=lightBounds.min.y-padding;
+ shadowCamera.top=lightBounds.max.y+padding;
+ shadowCamera.near=Math.max(.1,-lightBounds.max.z-padding);
+ const groundShadowLength=Math.max(0,modelBounds.max.y-ground.position.y)/sunDirection.y;
+ shadowCamera.far=-lightBounds.min.z+groundShadowLength+padding;
+ shadowCamera.updateProjectionMatrix();
+ // Keep the depth offset in world units as the fitted depth range changes.
+ sun.shadow.bias=-.009/(shadowCamera.far-shadowCamera.near);
  requestSunShadowUpdate();
+}
+function setSunDirection(x,y,z){
+ sunDirection.set(x,y,z).normalize();
+ configureArchitecturalSun();
 }
 async function prepareEnvironmentLighting(){
  if(generatedEnvironment)return;
@@ -145,8 +156,6 @@ async function prepareEnvironmentLighting(){
   generatedEnvironment=target.texture;
   environmentTarget=target;
   scene.environment=generatedEnvironment;
-  scene.environmentIntensity=renderer.xr.isPresenting?.30:.46;
-  renderingProfile.environmentReady=true;
   room.dispose();pmrem.dispose();
  }catch(error){
   console.warn('Optional reflective environment unavailable; direct lighting remains active',error);
@@ -291,7 +300,7 @@ document.querySelectorAll('.mode-tab').forEach(btn=>btn.addEventListener('click'
  }
  setMode(next);
 }));
-window.poornaViewer={THREE,scene,camera,renderer,orbit,rig,sun,opposite,ambient,ground,getBounds:()=>modelBounds.clone(),getModel:()=>model,isLoaded:()=>modelLoaded,getMode:()=>currentMode,setMode,status,notice};
+window.poornaViewer={THREE,scene,camera,renderer,orbit,rig,sun,opposite,ambient,ground,setSunDirection,getBounds:()=>modelBounds.clone(),getModel:()=>model,isLoaded:()=>modelLoaded,getMode:()=>currentMode,setMode,status,notice};
 function resize(){const w=Math.max(1,mount.clientWidth),h=Math.max(1,mount.clientHeight);renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix()}
 const ro=new ResizeObserver(resize);ro.observe(mount);resize();makeCamera('orbit');
 const io=new IntersectionObserver(e=>{visible=e[0]?.isIntersecting??true},{threshold:.005});io.observe(mount);
@@ -599,9 +608,9 @@ xrBackCanvas.width=512;xrBackCanvas.height=160;
 const xrBackCtx=xrBackCanvas.getContext('2d');
 xrBackCtx.fillStyle='#19291f';xrBackCtx.fillRect(0,0,512,160);
 xrBackCtx.strokeStyle='#c9ae84';xrBackCtx.lineWidth=8;xrBackCtx.strokeRect(5,5,502,150);
-xrBackCtx.fillStyle='#f5f0df';xrBackCtx.font='bold 46px Arial';
+xrBackCtx.fillStyle='#f5f0df';xrBackCtx.font=`700 ${vrHeadingSize}px ${viewerFont}`;
 xrBackCtx.textAlign='center';xrBackCtx.textBaseline='middle';
-xrBackCtx.fillText('← BACK / EXIT VR',256,80);
+xrBackCtx.fillText('← BACK / EXIT VR',256,80,466);
 const xrBackTexture=new THREE.CanvasTexture(xrBackCanvas);
 xrBackTexture.colorSpace=THREE.SRGBColorSpace;
 const xrBackButton=new THREE.Mesh(new THREE.PlaneGeometry(.308,.09625),
@@ -698,8 +707,8 @@ const vrTourTabCtx=vrTourTabCanvas.getContext('2d');
 vrTourTabCtx.fillStyle='#1b3026';vrTourTabCtx.fillRect(0,0,512,160);
 vrTourTabCtx.strokeStyle='#d7bd91';vrTourTabCtx.lineWidth=8;vrTourTabCtx.strokeRect(4,4,504,152);
 vrTourTabCtx.textAlign='center';vrTourTabCtx.textBaseline='middle';
-vrTourTabCtx.fillStyle='#fff4dd';vrTourTabCtx.font='bold 54px Arial';
-vrTourTabCtx.fillText('OPEN VR TOUR',256,82);
+vrTourTabCtx.fillStyle='#fff4dd';vrTourTabCtx.font=`700 ${vrHeadingSize}px ${viewerFont}`;
+vrTourTabCtx.fillText('OPEN VR TOUR',256,82,466);
 const vrTourTabTexture=new THREE.CanvasTexture(vrTourTabCanvas);
 vrTourTabTexture.colorSpace=THREE.SRGBColorSpace;
 const vrTourTab=new THREE.Mesh(new THREE.PlaneGeometry(.20,.0625),
@@ -712,12 +721,22 @@ renderer.xr.getController(0).add(vrTourTab);
 let vrTourPage='intro',vrTourIndex=-1,vrTourMessage='';
 let vrTourButtons=[];
 const vrTourRaycaster=new THREE.Raycaster();
+// Canvas text needs to be repainted after the webfonts finish loading.
+Promise.all([500,700].map(weight=>document.fonts.load(`${weight} ${vrBodySize}px ${viewerFont}`))).then(()=>{
+ xrBackCtx.fillStyle='#19291f';xrBackCtx.fillRect(14,14,484,132);
+ xrBackCtx.fillStyle='#f5f0df';xrBackCtx.fillText('← BACK / EXIT VR',256,80,466);
+ xrBackTexture.needsUpdate=true;
+ vrTourTabCtx.fillStyle='#1b3026';vrTourTabCtx.fillRect(14,14,484,132);
+ vrTourTabCtx.fillStyle='#fff4dd';vrTourTabCtx.fillText('OPEN VR TOUR',256,82,466);
+ vrTourTabTexture.needsUpdate=true;
+ vrTourRedraw();
+}).catch(error=>console.warn('VR labels are using the fallback font',error));
 function vrTourRoundRect(x,y,w,h,r,color){
  vrTourCtx.fillStyle=color;
  vrTourCtx.beginPath();vrTourCtx.roundRect(x,y,w,h,r);vrTourCtx.fill();
 }
-function vrTourLine(str,x,y,maxWidth=810,size=31,color='#e5eae1'){
- vrTourCtx.font='500 '+size+'px Arial';
+function vrTourLine(str,x,y,maxWidth=810,size=vrBodySize,color='#e5eae1'){
+ vrTourCtx.font=`500 ${size}px ${viewerFont}`;
  vrTourCtx.fillStyle=color;vrTourCtx.textAlign='left';vrTourCtx.textBaseline='top';
  const words=String(str||'').split(/\s+/);
  let line='',yy=y;
@@ -734,7 +753,7 @@ function vrTourLine(str,x,y,maxWidth=810,size=31,color='#e5eae1'){
 function vrTourButton(text,x,y,w,h,action,enabled=true){
  vrTourRoundRect(x,y,w,h,15,enabled?'#ddc199':'#465449');
  vrTourCtx.textAlign='center';vrTourCtx.textBaseline='middle';
- vrTourCtx.font='bold 28px Arial';vrTourCtx.fillStyle=enabled?'#203127':'#b4bfb2';
+ vrTourCtx.font=`700 ${vrBodySize}px ${viewerFont}`;vrTourCtx.fillStyle=enabled?'#203127':'#b4bfb2';
  vrTourCtx.fillText(text,x+w/2,y+h/2);
  if(enabled)vrTourButtons.push({x,y,w,h,action});
 }
@@ -743,8 +762,8 @@ function vrTourRedraw(){
  vrTourCtx.fillStyle='#17271f';vrTourCtx.fillRect(0,0,900,700);
  vrTourCtx.fillStyle='#2b4635';vrTourCtx.fillRect(0,0,900,104);
  vrTourCtx.fillStyle='#edd6af';vrTourCtx.textAlign='left';vrTourCtx.textBaseline='middle';
- vrTourCtx.font='bold 34px Arial';
- vrTourCtx.fillText(vrTourPage==='intro'?'WELCOME TO POORNA MARKET VR':'POORNA MARKET / GUIDED TOUR',34,52);
+ vrTourCtx.font=`700 ${vrHeadingSize}px ${viewerFont}`;
+ vrTourCtx.fillText(vrTourPage==='intro'?'WELCOME TO POORNA MARKET VR':'POORNA MARKET / GUIDED TOUR',34,52,832);
  if(vrTourPage==='intro'){
   const lines=[
    'LEFT JOYSTICK     Walk forward / back / sideways',
@@ -754,22 +773,22 @@ function vrTourRedraw(){
    'RIGHT B BUTTON   Return to website'
   ];
   let y=142;
-  for(const line of lines){y=vrTourLine(line,40,y,835,29);y+=15}
-  vrTourLine('Select START TOUR to visit the exhibition stops, or EXPLORE to walk freely.',40,495,825,27,'#c9d4c7');
+  for(const line of lines){y=vrTourLine(line,40,y,835);y+=15}
+  vrTourLine('Select START TOUR to visit the exhibition stops, or EXPLORE to walk freely.',40,495,825,vrBodySize,'#c9d4c7');
   vrTourButton('START TOUR',26,588,408,82,'start');
   vrTourButton('EXPLORE',466,588,408,82,'minimize');
  }else{
   const stops=window.poornaExhibition?.getStops?.()||[];
   const stop=stops[vrTourIndex];
-  vrTourCtx.font='bold 32px Arial';vrTourCtx.fillStyle='#dfc395';
+  vrTourCtx.font=`700 ${vrBodySize}px ${viewerFont}`;vrTourCtx.fillStyle='#dfc395';
   vrTourCtx.fillText(stops.length?'STOP '+(Math.max(0,vrTourIndex)+1)+' / '+stops.length:'NO TOUR STOPS',40,153);
   if(stop){
-   vrTourLine(stop.title||'Market stop',40,192,820,37,'#fff6e5');
-   vrTourLine(stop.note||stop.desc||'Explore this part of the market.',40,290,820,29);
+   vrTourLine(stop.title||'Market stop',40,192,820,vrHeadingSize,'#fff6e5');
+   vrTourLine(stop.note||stop.desc||'Explore this part of the market.',40,315,820);
   }else{
-   vrTourLine('Choose NEXT to move to the first architectural tour stop.',40,228,820,32);
+   vrTourLine('Choose NEXT to move to the first architectural tour stop.',40,228,820);
   }
-  if(vrTourMessage)vrTourLine(vrTourMessage,40,515,820,23,'#e8c697');
+  if(vrTourMessage)vrTourLine(vrTourMessage,40,515,820,vrBodySize,'#e8c697');
   vrTourButton('PREVIOUS',24,590,260,80,'previous',vrTourIndex>0);
   vrTourButton(vrTourIndex>=stops.length-1?'RESTART':'NEXT STOP',302,590,300,80,'next',stops.length>0);
   vrTourButton('HIDE',622,590,254,80,'minimize');

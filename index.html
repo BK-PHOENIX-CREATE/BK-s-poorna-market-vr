@@ -7,9 +7,6 @@
   <meta name="description" content="Re-development of Poorna Market — an architectural design project with immersive 3D exploration, desktop walkthrough, VR and architectural drawings." />
   <title>Poorna Market — Architecture in Motion</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@0,500;0,600;1,500;1,600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/styles.css" />
   <script type="importmap">
   {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/","three-mesh-bvh":"https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.9.18/build/index.module.js"}}
@@ -152,7 +149,26 @@
   <section class="closing"><div class="wrap closing-inner"><p class="overline light">AN ARCHITECTURAL EXPERIENCE / 2026</p><h2>Space becomes<br><em>experience.</em></h2><a class="button light-button" href="#experience">Enter the market <span>↗</span></a><div class="closing-pattern">P.</div></div></section>
 </main>
 <footer><div class="wrap footer-inner"><a class="footer-logo" href="#top">POORNA <em>MARKET</em><small>IX SEMESTER / ARCHITECTURAL DESIGN</small></a><p>RE-DEVELOPMENT OF POORNA MARKET<br>VISUALIZATION · ARCHITECTURE · EXPLORATION</p><div><a href="#project">Project</a><a href="#experience">3D & VR</a><a href="#drawings">Drawings</a><a href="#film">Project film</a><a href="#top">Back to top ↑</a></div></div><div class="wrap footer-end"><span>DESIGNED TO BE DISCOVERED · 2026</span><span>ACADEMIC PROJECT / INTERACTIVE PRESENTATION</span></div></footer>
-<div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="Architectural drawing preview" hidden><div class="lightbox-head"><span id="lightboxTitle">Architectural drawing</span><div><span>Click drawing to enlarge · scroll to inspect</span><a href="/assets/panel-full.webp" target="_blank" rel="noopener" class="full-panel-link">Open full presentation ↗</a><button id="lightboxClose" aria-label="Close image preview">×</button></div></div><div class="lightbox-body"><img id="lightboxImg" alt="Selected architectural presentation drawing" /></div></div>
+<dialog class="lightbox" id="lightbox" aria-labelledby="lightboxTitle">
+  <header class="lightbox-head">
+    <div class="drawing-heading">
+      <h2 id="lightboxTitle">Architectural drawing</h2>
+      <span id="lightboxCount"></span>
+    </div>
+    <button id="lightboxClose" type="button" aria-label="Close drawing preview" autofocus>×</button>
+  </header>
+  <div class="lightbox-body" tabindex="0" aria-label="Drawing canvas. Scroll to inspect when zoomed.">
+    <img id="lightboxImg" alt="" />
+  </div>
+  <footer class="drawing-toolbar">
+    <div role="group" aria-label="Browse drawings">
+      <button id="drawingPrevious" type="button">← Previous</button>
+      <button id="drawingNext" type="button">Next →</button>
+    </div>
+    <button id="drawingZoom" type="button" aria-pressed="false">Zoom drawing</button>
+    <a id="drawingOriginal" target="_blank" rel="noopener">Open original ↗</a>
+  </footer>
+</dialog>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 </body>
 </html>

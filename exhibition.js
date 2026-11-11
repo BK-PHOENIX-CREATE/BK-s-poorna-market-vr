@@ -115,27 +115,23 @@ function lighting(mode){
  const fog=scene.fog;
  if(mode==='golden'){
   scene.background.set(0xd5c2ad);if(fog)fog.color.set(0xd5c2ad);
-  sun.color.set(0xffc28a);sun.intensity=2.6;sun.position.set(-75,32,20);
+  sun.color.set(0xffc28a);sun.intensity=2.6;v.setSunDirection(-75,32,20);
   opposite.intensity=.38;ambient.intensity=.29;
   renderer.toneMappingExposure=1.25;scene.environmentIntensity=.36;
   ground.material.color.set(0xc6b9a7);
  }else if(mode==='overcast'){
   scene.background.set(0xcdd8da);if(fog)fog.color.set(0xcdd8da);
-  sun.color.set(0xf2f6ff);sun.intensity=1.65;sun.position.set(-25,92,25);
+  sun.color.set(0xf2f6ff);sun.intensity=1.65;v.setSunDirection(-25,92,25);
   opposite.intensity=.78;ambient.intensity=.58;
   renderer.toneMappingExposure=1.35;scene.environmentIntensity=.54;
   ground.material.color.set(0xc9cfca);
  }else{
   scene.background.set(0xd6e4ed);if(fog)fog.color.set(0xd6e4ed);
-  sun.color.set(0xfff0de);sun.intensity=3.1;sun.position.set(-45,80,42);
-  opposite.intensity=.70;ambient.intensity=.38;
-  renderer.toneMappingExposure=1.35;scene.environmentIntensity=.46;
+  sun.color.set(0xffdfb2);sun.intensity=2.8;v.setSunDirection(-12,22,33);
+  opposite.intensity=.16;ambient.intensity=.12;
+  renderer.toneMappingExposure=1.15;scene.environmentIntensity=.32;
   ground.material.color.set(0xd7d6c7);
  }
- // Refresh the cached directional depth map whenever the sun position changes.
- // Shadows remain available in desktop Walk and standalone Quest 3 VR.
- renderer.shadowMap.needsUpdate=true;
- sun.shadow.needsUpdate=true;
  v.status('Lighting selected: '+(mode==='golden'?'golden hour':mode==='overcast'?'soft overcast':'clear daylight'));
 }
 elements.lighting.addEventListener('change',()=>lighting(elements.lighting.value));
