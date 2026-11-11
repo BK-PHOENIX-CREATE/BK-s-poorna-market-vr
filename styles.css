@@ -420,7 +420,11 @@
 }
 .viewer-card-heading { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .viewer-card-heading h3 { margin: 0; font-size: var(--type-body); font-weight: 700; }
+.viewer-shell .ex-controls-top { container-type: inline-size; }
 .viewer-scene-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+@container (max-width: 320px) {
+  .viewer-scene-fields { grid-template-columns: 1fr; }
+}
 .viewer-scene-fields label { display: block; margin-bottom: 6px; color: var(--muted); letter-spacing: 0; font-size: var(--type-small); }
 .viewer-shell .viewer-scene-fields select { width: 100%; max-width: none; }
 .viewer-shell :is(.ex-controls-top select, .ex-controls-top button, .ex-tour-actions button, #tourEditorToggle) {
@@ -456,7 +460,7 @@
 }
 @media (max-width: 760px) {
   .viewer-shell .ex-controls { grid-template-columns: 1fr; }
-  .viewer-toolbar .mode-tabs { flex: 1 1 100%; }
+  .viewer-toolbar .mode-tabs { align-self: stretch; }
 }
 @media (max-width: 540px) {
   .viewer-top { min-height: 64px; }
