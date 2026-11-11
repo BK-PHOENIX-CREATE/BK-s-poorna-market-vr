@@ -82,7 +82,7 @@ elements.views.addEventListener('change',()=>{if(elements.views.value)view(eleme
 function updateTour(){
  const stop=stops[current];
  elements.tourTitle.textContent=stop?stop.title:'Your custom journey through Poorna Market';
- elements.tourDesc.textContent=stop?stop.desc:'Load the model to begin the journey.';
+ elements.tourDesc.textContent=stop?stop.desc:loaded?'Start the tour to visit the saved stops.':'Tour stops will be available when the model loads.';
  elements.tourCount.textContent=String(Math.max(0,current+1)).padStart(2,'0')+' / '+String(stops.length).padStart(2,'0');
  elements.play.textContent=playing?'Ⅱ Pause tour':current>=stops.length-1?'↺ Replay tour':current<0?'▶ Start tour':'▶ Resume tour';
  elements.prev.disabled=!loaded||current<=0;

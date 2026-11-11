@@ -224,3 +224,247 @@
   box-shadow: none;
 }
 .gallery-card:hover { border-color: var(--accent-ink); }
+
+/* Market explorer */
+.viewer-shell {
+  --explorer-line: #d9d5cb;
+  --explorer-panel: var(--white);
+  border: 1px solid #4a5365;
+  border-radius: 24px;
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 0 26px 72px #0b122766;
+}
+.viewer-top {
+  height: auto;
+  min-height: 76px;
+  padding: 14px clamp(14px, 2.4vw, 30px);
+  gap: 14px;
+  border: 0;
+  border-radius: 23px 23px 0 0;
+  background: var(--deeper);
+  color: var(--white);
+}
+.viewer-brand { gap: 12px; }
+.viewer-brand strong { font-size: var(--type-lead); letter-spacing: -.04em; }
+.viewer-brand small { color: #c1cada; letter-spacing: normal; }
+.viewer-mark {
+  width: 38px;
+  height: 38px;
+  flex: none;
+  border: 0;
+  border-radius: 12px;
+  background: var(--accent);
+  color: var(--ink);
+  font-size: var(--type-lead);
+}
+.viewer-model-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #d6deea;
+  letter-spacing: normal;
+}
+.viewer-model-state .live-indicator { background: var(--accent); box-shadow: none; }
+.viewer-top .icon-btn {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  margin: 0;
+  border: 1px solid #596579;
+  border-radius: 12px;
+  color: var(--white);
+}
+.viewer-top .icon-btn:hover { background: #2d3951; }
+.viewer-shell .viewport { height: clamp(430px, 54vw, 710px); min-height: 0; }
+.viewer-shell:is(:fullscreen, .is-fullscreen) {
+  border-radius: 0;
+  overflow: auto;
+}
+.viewer-shell:is(:fullscreen, .is-fullscreen) .viewport { height: max(310px, calc(100dvh - 160px)); }
+.viewer-annotation {
+  top: 16px;
+  left: 16px;
+  padding: 9px 13px;
+  border: 1px solid #ffffff66;
+  border-radius: 999px;
+  background: #111827e8;
+  color: var(--white);
+  letter-spacing: .06em;
+}
+.viewer-annotation .live-indicator { background: var(--accent); box-shadow: none; }
+.viewport-actions { left: 16px; bottom: 16px; max-width: 57%; gap: 6px; }
+.viewport-actions button {
+  min-height: 40px;
+  border-color: #ffffff55;
+  border-radius: 999px;
+  background: #111827ed;
+  color: var(--white);
+  font-size: var(--type-small);
+  font-weight: 700;
+}
+.viewport-actions button:hover { background: var(--deep); }
+.viewer-help {
+  left: 16px;
+  bottom: 68px;
+  max-height: calc(100% - 105px);
+  overflow: auto;
+  border: 1px solid var(--explorer-line);
+  border-radius: 16px;
+  background: var(--explorer-panel);
+  z-index: 11;
+}
+.poorna-minimap {
+  inset: auto 16px 16px auto;
+  width: clamp(104px, 14vw, 164px);
+  border: 1px solid #ffffff66;
+  border-radius: 14px;
+  background: var(--deeper);
+}
+.minimap-title, .minimap-foot { background: var(--deeper); }
+.minimap-title button { border-radius: 6px; }
+.ex-info { border-radius: 16px; background: var(--deeper); }
+.viewer-toolbar {
+  position: relative;
+  z-index: 12;
+  align-items: center;
+  padding: 12px clamp(12px, 2vw, 24px);
+  border: 0;
+  border-bottom: 1px solid var(--explorer-line);
+  background: var(--explorer-panel);
+}
+.viewer-toolbar .mode-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border-radius: 14px;
+  background: var(--paper);
+}
+.viewer-toolbar .mode-tab {
+  min-height: 40px;
+  padding: 6px clamp(8px, 1.1vw, 16px);
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.viewer-toolbar .mode-tab span { display: inline; margin-right: 2px; }
+.viewer-toolbar .mode-tab:hover { color: var(--ink); background: var(--explorer-panel); }
+.viewer-toolbar .mode-tab.selected { background: var(--deeper); color: var(--accent); }
+.viewer-toolbar .viewer-ctas { flex-wrap: nowrap; gap: 8px; margin-left: auto; }
+.viewer-toolbar .vr-button, .viewer-toolbar .file-select,
+.viewer-device-menu summary {
+  padding: 10px 14px;
+  min-height: 42px;
+  border: 1px solid var(--explorer-line);
+  border-radius: 10px;
+  font-size: var(--type-body);
+  font-weight: 700;
+}
+.viewer-device-menu { position: relative; }
+.viewer-device-menu summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  list-style: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.viewer-device-menu summary::-webkit-details-marker { display: none; }
+.viewer-device-menu summary:focus-visible { outline: 3px solid var(--accent-ink); outline-offset: 3px; }
+.viewer-device-options {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  display: grid;
+  gap: 6px;
+  width: max-content;
+  min-width: 100%;
+  padding: 8px;
+  border: 1px solid var(--explorer-line);
+  border-radius: 14px;
+  background: var(--explorer-panel);
+  box-shadow: 0 12px 36px #10182729;
+}
+.viewer-device-options :is(#mobileMotionBtn, #mobileStereoBtn, #fileButton) {
+  background: var(--paper);
+  color: var(--ink);
+  border-color: var(--explorer-line);
+  text-align: left;
+}
+.viewer-device-options :is(#mobileMotionBtn, #mobileStereoBtn)[aria-pressed="true"] { background: var(--accent-wash); }
+.viewer-toolbar #vrEnterBtn { border-color: transparent; background: var(--accent); color: var(--ink); white-space: nowrap; }
+.viewer-toolbar #vrEnterBtn:hover { background: var(--accent-hover); }
+.viewer-shell .ex-controls {
+  grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
+  align-items: stretch;
+  padding: clamp(12px, 2vw, 24px);
+  gap: 12px;
+  border: 0;
+  background: var(--paper);
+  color: var(--ink);
+}
+.viewer-shell :is(.ex-controls-top, .ex-tour) {
+  display: grid;
+  align-content: start;
+  align-items: start;
+  gap: 14px;
+  min-width: 0;
+  padding: clamp(14px, 1.8vw, 22px);
+  border: 1px solid var(--explorer-line);
+  border-radius: 16px;
+  background: var(--explorer-panel);
+}
+.viewer-card-heading { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.viewer-card-heading h3 { margin: 0; font-size: var(--type-body); font-weight: 700; }
+.viewer-scene-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.viewer-scene-fields label { display: block; margin-bottom: 6px; color: var(--muted); letter-spacing: 0; font-size: var(--type-small); }
+.viewer-shell .viewer-scene-fields select { width: 100%; max-width: none; }
+.viewer-shell :is(.ex-controls-top select, .ex-controls-top button, .ex-tour-actions button, #tourEditorToggle) {
+  min-height: 40px;
+  border: 1px solid var(--explorer-line);
+  border-radius: 10px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: var(--type-body);
+}
+.viewer-shell #exToggleHotspots { margin: 0; }
+.viewer-shell #exToggleHotspots[aria-pressed="true"] { background: var(--accent-wash); border-color: #b49850; }
+.viewer-shell #tourEditorToggle { padding: 6px 10px; }
+.viewer-shell .ex-tour-copy { gap: 5px; }
+.viewer-shell .ex-tour-copy strong { font-size: var(--type-body); line-height: 1.35; }
+.viewer-shell .ex-tour-copy span { color: var(--muted); }
+.viewer-shell .ex-tour-actions { justify-content: flex-start; gap: 6px; }
+.viewer-shell .ex-tour-actions span { color: var(--accent-ink); font-variant-numeric: tabular-nums; margin-right: auto; }
+.viewer-shell #exPlay { background: var(--deeper); color: var(--white); }
+.viewer-shell #exPlay:hover { background: var(--deep); }
+.viewer-shell .ex-tour-actions button:disabled { opacity: .48; }
+.viewer-shell .viewer-footer {
+  border: 0;
+  border-top: 1px solid var(--explorer-line);
+  border-radius: 0 0 23px 23px;
+  background: var(--explorer-panel);
+  color: var(--muted);
+}
+.viewer-shell .viewer-footer span:last-child { color: var(--muted); }
+.viewer-shell :is(.viewer-toolbar, .ex-controls) :is(button, select):focus-visible {
+  outline-color: var(--accent-ink);
+  box-shadow: none;
+}
+@media (max-width: 760px) {
+  .viewer-shell .ex-controls { grid-template-columns: 1fr; }
+  .viewer-toolbar .mode-tabs { flex: 1 1 100%; }
+}
+@media (max-width: 540px) {
+  .viewer-top { min-height: 64px; }
+  .viewer-top .viewer-model-state { display: none; }
+  .viewer-shell .viewport { height: clamp(360px, 110vw, 490px); }
+  .viewer-shell:is(:fullscreen, .is-fullscreen) .viewport { height: max(250px, calc(100dvh - 190px)); }
+  .viewer-annotation { top: 10px; left: 10px; }
+  .viewport-actions { left: 10px; bottom: 10px; }
+  .poorna-minimap { right: 10px; bottom: 10px; }
+  .viewer-shell .viewer-footer span:last-child { display: none; }
+}

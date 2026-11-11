@@ -265,11 +265,12 @@ function makeCamera(mode){
  const r=Math.max(25,size.x,size.z),h=Math.max(9,size.y);
  camera.up.set(0,1,0);camera.fov=56;camera.updateProjectionMatrix();
  if(mode==='orbit'){
-   camera.position.set(center.x+r*.86,Math.max(h*1.8,r*.65),center.z+r*.99);
-   orbit.target.set(center.x,h*.4,center.z);orbit.enableRotate=true;orbit.enableZoom=true;orbit.enabled=true;orbit.update();
-   modeLabel.textContent='PERSPECTIVE / ORBIT';
+   const distanceScale=Math.max(.8,.83/camera.aspect);
+   camera.position.set(center.x+r*.86*distanceScale,center.y+Math.max(h,r*.55)*distanceScale,center.z+r*.99*distanceScale);
+   orbit.target.copy(center);orbit.enableRotate=true;orbit.enableZoom=true;orbit.enabled=true;orbit.update();
+   modeLabel.textContent='Orbit view';
  }else if(mode==='plan'){
-   camera.position.set(center.x,Math.max(90,r*1.65),center.z+.01);camera.up.set(0,0,-1);camera.lookAt(center.x,0,center.z);orbit.target.set(center.x,0,center.z);orbit.enableRotate=false;orbit.enabled=true;orbit.update();modeLabel.textContent='ARCHITECTURAL / PLAN';
+   camera.position.set(center.x,Math.max(90,r*1.65),center.z+.01);camera.up.set(0,0,-1);camera.lookAt(center.x,0,center.z);orbit.target.set(center.x,0,center.z);orbit.enableRotate=false;orbit.enabled=true;orbit.update();modeLabel.textContent='Plan view';
  }else{
    const start=entranceSpawn();
    camera.position.set(mode==='sky'?center.x+r*.8:start.position.x,mode==='sky'?Math.max(h+12,r*.7):start.position.y+EYE,mode==='sky'?center.z+r*.85:start.position.z);
@@ -277,7 +278,7 @@ function makeCamera(mode){
    const dir=target.sub(camera.position).normalize();
    yaw=Math.atan2(-dir.x,-dir.z);pitch=mode==='sky'?Math.asin(THREE.MathUtils.clamp(dir.y,-1,1)):0;
    camera.rotation.order='YXZ';camera.rotation.set(pitch,yaw,0);orbit.enabled=false;
-   modeLabel.textContent=mode==='sky'?'AERIAL / FREE FLIGHT':'HUMAN SCALE / GROUNDED WALK';
+   modeLabel.textContent=mode==='sky'?'Fly mode':'Walk mode';
    if(mode==='walk'){
      fallSpeed=0;desktopWalkState.velocity=0;
      const floor=collisionReady?floorAt(camera.position.x,camera.position.z,camera.position.y-EYE,STEP,8):null;
@@ -288,7 +289,11 @@ function makeCamera(mode){
 }
 function setMode(next){
  keys.clear();currentMode=next;
- document.querySelectorAll('.mode-tab').forEach(b=>b.classList.toggle('selected',b.dataset.mode===next));
+ document.querySelectorAll('.mode-tab').forEach(button=>{
+  const selected=button.dataset.mode===next;
+  button.classList.toggle('selected',selected);
+  button.setAttribute('aria-pressed',String(selected));
+ });
  if(document.pointerLockElement===renderer.domElement)document.exitPointerLock?.();
  makeCamera(next);
  setStartButtons();
@@ -489,8 +494,23 @@ $('modelFile').addEventListener('change',e=>{const file=e.target.files?.[0];if(!
 $('resetViewBtn').addEventListener('click',()=>setMode(currentMode));
 $('helpBtn').addEventListener('click',()=>$('viewerHelp').hidden=!$('viewerHelp').hidden);
 $('closeHelpBtn').addEventListener('click',()=>$('viewerHelp').hidden=true);
-$('fullscreenBtn').addEventListener('click',async()=>{const shell=$('viewerShell');if(document.fullscreenElement){await document.exitFullscreen?.();shell.classList.remove('is-fullscreen')}else{if(shell.requestFullscreen){try{await shell.requestFullscreen()}catch{shell.classList.add('is-fullscreen')}}else shell.classList.add('is-fullscreen')}resize()});
-document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement)$('viewerShell').classList.remove('is-fullscreen');resize()});
+const fullscreenShell=$('viewerShell'),fullscreenButton=$('fullscreenBtn');
+function syncFullscreen(){
+ const expanded=document.fullscreenElement===fullscreenShell||fullscreenShell.classList.contains('is-fullscreen');
+ const label=expanded?'Exit expanded viewer':'Expand model viewer';
+ fullscreenButton.setAttribute('aria-label',label);
+ fullscreenButton.title=label;
+ resize();
+}
+fullscreenButton.addEventListener('click',async()=>{
+ if(fullscreenShell.classList.contains('is-fullscreen'))fullscreenShell.classList.remove('is-fullscreen');
+ else if(document.fullscreenElement===fullscreenShell)await document.exitFullscreen();
+ else if(fullscreenShell.requestFullscreen){
+  try{await fullscreenShell.requestFullscreen()}catch{fullscreenShell.classList.add('is-fullscreen')}
+ }else fullscreenShell.classList.add('is-fullscreen');
+ syncFullscreen();
+});
+document.addEventListener('fullscreenchange',syncFullscreen);
 
 // Quest 3: left thumbstick is relative to headset yaw; right thumbstick
 // turns continuously while held. Ground movement is shared with desktop Walk.
