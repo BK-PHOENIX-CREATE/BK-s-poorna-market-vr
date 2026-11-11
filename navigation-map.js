@@ -9,6 +9,8 @@ const {scene,camera,renderer}=v;
 const panel=$('poornaMinimap'),canvas=$('minimapCanvas'),ctx=canvas.getContext('2d',{alpha:false});
 const mapTypography=getComputedStyle(panel);
 const mapFont=mapTypography.fontFamily;
+const mapAccent=mapTypography.getPropertyValue('--accent').trim();
+const mapInk=mapTypography.getPropertyValue('--ink').trim();
 const mapLabelSize=10;
 const mapTitleSize=mapLabelSize*Number(mapTypography.getPropertyValue('--golden-ratio'));
 const base=document.createElement('canvas');base.width=256;base.height=256;
@@ -64,7 +66,7 @@ function drawPosition(){
  if(renderer.xr.isPresenting)renderer.xr.getCamera(camera).getWorldDirection(direction);
  const angle=Math.atan2(direction.x,-direction.z);
  ctx.save();ctx.translate(x,y);ctx.rotate(angle);
- ctx.fillStyle='#d35936';ctx.strokeStyle='#fff';ctx.lineWidth=2;
+ ctx.fillStyle=mapAccent;ctx.strokeStyle=mapInk;ctx.lineWidth=2;
  ctx.beginPath();ctx.moveTo(0,-11);ctx.lineTo(7,8);ctx.lineTo(0,4);ctx.lineTo(-7,8);ctx.closePath();ctx.fill();ctx.stroke();ctx.restore();
  ctx.fillStyle='#243d31';ctx.font=`700 ${mapLabelSize}px ${mapFont}`;ctx.fillText('YOU',Math.min(222,x+10),Math.max(20,y-12));
  $('minimapLevel').textContent='● ELEV. '+Math.max(0,marker.y-1.7).toFixed(1)+' m';

@@ -11,6 +11,8 @@ const mount=$('canvasMount');
 if (!mount) throw new Error('Missing model canvas');
 const viewerTypography=getComputedStyle(mount);
 const viewerFont=viewerTypography.fontFamily;
+const viewerAccent=viewerTypography.getPropertyValue('--accent').trim();
+const viewerInk=viewerTypography.getPropertyValue('--ink').trim();
 const typeRatio=Number(viewerTypography.getPropertyValue('--golden-ratio'));
 const vrBodySize=28;
 const vrHeadingSize=vrBodySize*typeRatio;
@@ -607,7 +609,7 @@ const xrBackCanvas=document.createElement('canvas');
 xrBackCanvas.width=512;xrBackCanvas.height=160;
 const xrBackCtx=xrBackCanvas.getContext('2d');
 xrBackCtx.fillStyle='#19291f';xrBackCtx.fillRect(0,0,512,160);
-xrBackCtx.strokeStyle='#c9ae84';xrBackCtx.lineWidth=8;xrBackCtx.strokeRect(5,5,502,150);
+xrBackCtx.strokeStyle=viewerAccent;xrBackCtx.lineWidth=8;xrBackCtx.strokeRect(5,5,502,150);
 xrBackCtx.fillStyle='#f5f0df';xrBackCtx.font=`700 ${vrHeadingSize}px ${viewerFont}`;
 xrBackCtx.textAlign='center';xrBackCtx.textBaseline='middle';
 xrBackCtx.fillText('← BACK / EXIT VR',256,80,466);
@@ -705,7 +707,7 @@ const vrTourTabCanvas=document.createElement('canvas');
 vrTourTabCanvas.width=512;vrTourTabCanvas.height=160;
 const vrTourTabCtx=vrTourTabCanvas.getContext('2d');
 vrTourTabCtx.fillStyle='#1b3026';vrTourTabCtx.fillRect(0,0,512,160);
-vrTourTabCtx.strokeStyle='#d7bd91';vrTourTabCtx.lineWidth=8;vrTourTabCtx.strokeRect(4,4,504,152);
+vrTourTabCtx.strokeStyle=viewerAccent;vrTourTabCtx.lineWidth=8;vrTourTabCtx.strokeRect(4,4,504,152);
 vrTourTabCtx.textAlign='center';vrTourTabCtx.textBaseline='middle';
 vrTourTabCtx.fillStyle='#fff4dd';vrTourTabCtx.font=`700 ${vrHeadingSize}px ${viewerFont}`;
 vrTourTabCtx.fillText('OPEN VR TOUR',256,82,466);
@@ -751,9 +753,9 @@ function vrTourLine(str,x,y,maxWidth=810,size=vrBodySize,color='#e5eae1'){
  return yy+size*1.35;
 }
 function vrTourButton(text,x,y,w,h,action,enabled=true){
- vrTourRoundRect(x,y,w,h,15,enabled?'#ddc199':'#465449');
+ vrTourRoundRect(x,y,w,h,15,enabled?viewerAccent:'#465449');
  vrTourCtx.textAlign='center';vrTourCtx.textBaseline='middle';
- vrTourCtx.font=`700 ${vrBodySize}px ${viewerFont}`;vrTourCtx.fillStyle=enabled?'#203127':'#b4bfb2';
+ vrTourCtx.font=`700 ${vrBodySize}px ${viewerFont}`;vrTourCtx.fillStyle=enabled?viewerInk:'#b4bfb2';
  vrTourCtx.fillText(text,x+w/2,y+h/2);
  if(enabled)vrTourButtons.push({x,y,w,h,action});
 }
@@ -761,7 +763,7 @@ function vrTourRedraw(){
  vrTourButtons=[];
  vrTourCtx.fillStyle='#17271f';vrTourCtx.fillRect(0,0,900,700);
  vrTourCtx.fillStyle='#2b4635';vrTourCtx.fillRect(0,0,900,104);
- vrTourCtx.fillStyle='#edd6af';vrTourCtx.textAlign='left';vrTourCtx.textBaseline='middle';
+ vrTourCtx.fillStyle=viewerAccent;vrTourCtx.textAlign='left';vrTourCtx.textBaseline='middle';
  vrTourCtx.font=`700 ${vrHeadingSize}px ${viewerFont}`;
  vrTourCtx.fillText(vrTourPage==='intro'?'WELCOME TO POORNA MARKET VR':'POORNA MARKET / GUIDED TOUR',34,52,832);
  if(vrTourPage==='intro'){
@@ -780,7 +782,7 @@ function vrTourRedraw(){
  }else{
   const stops=window.poornaExhibition?.getStops?.()||[];
   const stop=stops[vrTourIndex];
-  vrTourCtx.font=`700 ${vrBodySize}px ${viewerFont}`;vrTourCtx.fillStyle='#dfc395';
+  vrTourCtx.font=`700 ${vrBodySize}px ${viewerFont}`;vrTourCtx.fillStyle=viewerAccent;
   vrTourCtx.fillText(stops.length?'STOP '+(Math.max(0,vrTourIndex)+1)+' / '+stops.length:'NO TOUR STOPS',40,153);
   if(stop){
    vrTourLine(stop.title||'Market stop',40,192,820,vrHeadingSize,'#fff6e5');
