@@ -17,7 +17,7 @@ const vrBodySize=28;
 const vrHeadingSize=vrBodySize*typeRatio;
 const scene=new THREE.Scene();
 scene.background=new THREE.Color(0xd6e4ed);
-scene.fog=new THREE.Fog(0xd6e4ed,190,520);
+scene.fog=new THREE.Fog(0xd6e4ed,120,260);
 const camera=new THREE.PerspectiveCamera(56,1,.08,800);
 const rig=new THREE.Group();rig.name='VR Player';scene.add(rig);rig.add(camera);
 const renderer=new THREE.WebGLRenderer({antialias:true,alpha:false,powerPreference:'high-performance'});
@@ -31,7 +31,7 @@ renderer.toneMappingExposure=1.15;
 renderer.xr.enabled=true;
 renderer.xr.setReferenceSpaceType('local-floor');
 renderer.shadowMap.enabled=true;
-renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.shadowMap.type=THREE.PCFShadowMap;
 // The market and sun are static: render the shadow atlas only when needed.
 renderer.shadowMap.autoUpdate=false;
 mount.appendChild(renderer.domElement);
@@ -54,8 +54,13 @@ const ground=new THREE.Mesh(new THREE.PlaneGeometry(520,520),new THREE.MeshStand
 /* Architectural sun/shadows across desktop Walk and Quest 3.
    Model geometry and the tested VR locomotion physics remain untouched.
    Static sun shadows are cached instead of re-rendered at headset frame rate. */
-let generatedEnvironment=null,environmentTarget=null;
-scene.environmentIntensity=.32;
+const lightingPresets={
+ day:{zenith:0x779fc7,horizon:0xe2e5df,ground:0xcac1ac,skyFill:0xe3efff,bounce:0x927e68,fill:1.15,sun:0xffe2bd,power:2.9,direction:[-12,22,33],shadow:1,exposure:1.1,environment:.42,glow:.4},
+ golden:{zenith:0x8796b6,horizon:0xf1d2ad,ground:0xc7b69e,skyFill:0xe1e8ff,bounce:0xa78665,fill:1.02,sun:0xffbe82,power:2.7,direction:[-75,32,20],shadow:1,exposure:1.12,environment:.38,glow:.65},
+ overcast:{zenith:0xabb8c7,horizon:0xe6e9e8,ground:0xc7cbc5,skyFill:0xeaf2ff,bounce:0x9a9690,fill:1.55,sun:0xf1f5ff,power:1.05,direction:[-25,92,25],shadow:.6,exposure:1.14,environment:.5,glow:0}
+};
+const skyMaps=new Map();
+let activeLighting;
 // Shadow maps must be rebuilt when the light or quality profile changes.
 // Lower resolution and a one-time shadow render keep Quest 3 performant.
 function requestSunShadowUpdate(){
@@ -67,6 +72,7 @@ function setRenderingProfile(next){
  // WebXR manages its own framebuffer dimensions: never resize during VR.
  if(!immersive)renderer.setPixelRatio(Math.min(devicePixelRatio,portable?1.25:1.65));
  const resolution=Math.min(renderer.capabilities.maxTextureSize,immersive?1536:(portable?1024:3072));
+ sun.shadow.radius=immersive||portable?1.15:1.6;
  if(sun.shadow.mapSize.x!==resolution||sun.shadow.mapSize.y!==resolution){
   sun.shadow.mapSize.set(resolution,resolution);
   if(sun.shadow.map){sun.shadow.map.dispose();sun.shadow.map=null;}
@@ -142,25 +148,60 @@ function configureArchitecturalSun(){
  sun.shadow.bias=-.009/(shadowCamera.far-shadowCamera.near);
  requestSunShadowUpdate();
 }
-function setSunDirection(x,y,z){
- sunDirection.set(x,y,z).normalize();
- configureArchitecturalSun();
-}
-async function prepareEnvironmentLighting(){
- if(generatedEnvironment)return;
- try{
-  const {RoomEnvironment}=await import('three/addons/environments/RoomEnvironment.js');
-  const room=new RoomEnvironment();
-  const pmrem=new THREE.PMREMGenerator(renderer);
-  pmrem.compileEquirectangularShader();
-  const target=pmrem.fromScene(room,.06);
-  generatedEnvironment=target.texture;
-  environmentTarget=target;
-  scene.environment=generatedEnvironment;
-  room.dispose();pmrem.dispose();
- }catch(error){
-  console.warn('Optional reflective environment unavailable; direct lighting remains active',error);
+function buildSkyMap(preset){
+ const width=512,height=256;
+ const pixels=new Uint8Array(width*height*4);
+ const zenith=new THREE.Color(preset.zenith);
+ const horizon=new THREE.Color(preset.horizon);
+ const groundBounce=new THREE.Color(preset.ground).multiplyScalar(.56);
+ const sunGlow=new THREE.Color(preset.sun);
+ const color=new THREE.Color();
+ for(let y=0;y<height;y++){
+  const elevation=((y+.5)/height-.5)*Math.PI;
+  const up=Math.sin(elevation),ring=Math.cos(elevation);
+  for(let x=0;x<width;x++){
+   const azimuth=((x+.5)/width-.5)*2*Math.PI;
+   const alignment=ring*(Math.cos(azimuth)*sunDirection.x+Math.sin(azimuth)*sunDirection.z)+up*sunDirection.y;
+   const glow=preset.glow*Math.pow(Math.max(0,alignment),30)*THREE.MathUtils.smoothstep(up,0,.12);
+   color.copy(horizon);
+   if(up>=0)color.lerp(zenith,Math.pow(up,.45)).lerp(sunGlow,glow);
+   else color.lerp(groundBounce,THREE.MathUtils.smoothstep(-up,0,.22));
+   color.convertLinearToSRGB();
+   const i=(y*width+x)*4;
+   pixels[i]=Math.round(color.r*255);
+   pixels[i+1]=Math.round(color.g*255);
+   pixels[i+2]=Math.round(color.b*255);
+   pixels[i+3]=255;
+  }
  }
+ const texture=new THREE.DataTexture(pixels,width,height);
+ texture.name='Poorna Market outdoor sky';
+ texture.mapping=THREE.EquirectangularReflectionMapping;
+ texture.colorSpace=THREE.SRGBColorSpace;
+ texture.minFilter=texture.magFilter=THREE.LinearFilter;
+ texture.wrapS=THREE.RepeatWrapping;
+ texture.needsUpdate=true;
+ return texture;
+}
+function setLighting(mode){
+ if(activeLighting===mode)return;
+ const preset=lightingPresets[mode];
+ activeLighting=mode;
+ sunDirection.set(...preset.direction).normalize();
+ sun.color.set(preset.sun);
+ sun.intensity=preset.power;
+ sun.shadow.intensity=preset.shadow;
+ skylight.color.set(preset.skyFill);
+ skylight.groundColor.set(preset.bounce);
+ skylight.intensity=preset.fill;
+ ground.material.color.set(preset.ground);
+ renderer.toneMappingExposure=preset.exposure;
+ scene.fog.color.set(preset.horizon);
+ scene.environmentIntensity=preset.environment;
+ if(!skyMaps.has(mode))skyMaps.set(mode,buildSkyMap(preset));
+ // The same sky lights the materials and fills the background in both eyes.
+ scene.background=scene.environment=skyMaps.get(mode);
+ configureArchitecturalSun();
 }
 const grid=new THREE.GridHelper(260,52,0xa4aea3,0xc7d1c6);grid.position.y=-.07;grid.material.opacity=.22;grid.material.transparent=true;scene.add(grid);
 let model=null,modelBounds=new THREE.Box3(new THREE.Vector3(-46,0,-38),new THREE.Vector3(46,20,38));
@@ -306,7 +347,7 @@ document.querySelectorAll('.mode-tab').forEach(btn=>btn.addEventListener('click'
  }
  setMode(next);
 }));
-window.poornaViewer={THREE,scene,camera,renderer,orbit,rig,sun,opposite,ambient,ground,setSunDirection,getBounds:()=>modelBounds.clone(),getModel:()=>model,isLoaded:()=>modelLoaded,getMode:()=>currentMode,setMode,status,notice};
+window.poornaViewer={THREE,scene,camera,renderer,orbit,rig,setLighting,getBounds:()=>modelBounds.clone(),getModel:()=>model,isLoaded:()=>modelLoaded,getMode:()=>currentMode,setMode,status,notice};
 function resize(){const w=Math.max(1,mount.clientWidth),h=Math.max(1,mount.clientHeight);renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix()}
 const ro=new ResizeObserver(resize);ro.observe(mount);resize();makeCamera('orbit');
 const io=new IntersectionObserver(e=>{visible=e[0]?.isIntersecting??true},{threshold:.005});io.observe(mount);
@@ -474,9 +515,9 @@ function load(file){
   const modelSize=modelBounds.getSize(new THREE.Vector3());
   if(modelSize.x>2000||modelSize.z>2000){const scale=95/Math.max(modelSize.x,modelSize.z);model.scale.setScalar(scale);modelBounds.setFromObject(model)}
   scene.add(model);
-  configureArchitecturalSun();
+  if(activeLighting)configureArchitecturalSun();
+  else setLighting('day');
   setRenderingProfile(renderer.xr.isPresenting?'vr':(isPortableDevice?'mobile':'desktop'));
-  void prepareEnvironmentLighting();
   requestSunShadowUpdate();
   modelLoaded=true;isLoading=false;tag.textContent='ACTUAL MARKET MODEL LOADED';splash.hidden=true;progress.hidden=true;grid.visible=false;ground.visible=true;
   setMode('orbit');writeStartToUI();buildWalkPhysics().catch(error=>console.error('Preparing VR walking surfaces',error));window.poornaExhibition?.modelReady();window.poornaNavigation?.modelReady();status(`Loaded successfully · ${meshCount} draw groups · Orbit / Sky / Walk / Plan / VR available`);
@@ -917,6 +958,6 @@ $('vrEnterBtn').addEventListener('click',async()=>{
  try{const supported=await navigator.xr.isSessionSupported('immersive-vr');if(!supported){notice('Immersive VR is not supported on this device or browser. Desktop walkthrough still works.');return}hiddenVR.click()}
  catch(error){console.error(error);notice('Could not start the VR session. Check headset browser permissions.')}
 });
-window.addEventListener('beforeunload',()=>{renderer.setAnimationLoop(null);environmentTarget?.dispose();renderer.dispose();ro.disconnect();io.disconnect()});
+window.addEventListener('beforeunload',()=>{renderer.setAnimationLoop(null);skyMaps.forEach(texture=>texture.dispose());renderer.dispose();ro.disconnect();io.disconnect()});
 window.market3dReady=true;
 document.addEventListener('DOMContentLoaded',loadDefaultModel,{once:true});

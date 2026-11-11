@@ -5,7 +5,7 @@ import * as THREE from 'three';
 const $=id=>document.getElementById(id);
 const v=window.poornaViewer;
 if(!v) throw new Error('3D model viewer is not available');
-const {camera,scene,renderer,orbit,sun,opposite,ambient,ground}=v;
+const {camera,renderer,orbit}=v;
 let stops=[
  {id:'arrival',title:'Arrival & street edge',desc:'Examine the relationship between the market proposal and its public-facing site edges.',label:'Site and access',note:'The project panel includes site analysis and access studies. Compare this view with the contextual drawings.',anchor:[-.4,.12,.40]},
  {id:'overview',title:'The market as a whole',desc:'Understand built massing, internal routes and the overall market organization.',label:'Market organization',note:'Use the floor plans and circulation diagrams alongside this view to read the proposed trading and public spaces.',anchor:[0,.13,0]},
@@ -110,28 +110,7 @@ elements.next.addEventListener('click',()=>stopAt(current+1,false));
 // OrbitControls emits start when a visitor takes manual camera control.
 orbit.addEventListener('start',()=>{stop()});
 function lighting(mode){
- // Architectural daylight studies with balanced direct sunlight, soft sky
- // fill and physically based reflections. Keep any imported textures intact.
- const fog=scene.fog;
- if(mode==='golden'){
-  scene.background.set(0xd5c2ad);if(fog)fog.color.set(0xd5c2ad);
-  sun.color.set(0xffc28a);sun.intensity=2.6;v.setSunDirection(-75,32,20);
-  opposite.intensity=.38;ambient.intensity=.29;
-  renderer.toneMappingExposure=1.25;scene.environmentIntensity=.36;
-  ground.material.color.set(0xc6b9a7);
- }else if(mode==='overcast'){
-  scene.background.set(0xcdd8da);if(fog)fog.color.set(0xcdd8da);
-  sun.color.set(0xf2f6ff);sun.intensity=1.65;v.setSunDirection(-25,92,25);
-  opposite.intensity=.78;ambient.intensity=.58;
-  renderer.toneMappingExposure=1.35;scene.environmentIntensity=.54;
-  ground.material.color.set(0xc9cfca);
- }else{
-  scene.background.set(0xd6e4ed);if(fog)fog.color.set(0xd6e4ed);
-  sun.color.set(0xffdfb2);sun.intensity=2.8;v.setSunDirection(-12,22,33);
-  opposite.intensity=.16;ambient.intensity=.12;
-  renderer.toneMappingExposure=1.15;scene.environmentIntensity=.32;
-  ground.material.color.set(0xd7d6c7);
- }
+ v.setLighting(mode);
  v.status('Lighting selected: '+(mode==='golden'?'golden hour':mode==='overcast'?'soft overcast':'clear daylight'));
 }
 elements.lighting.addEventListener('change',()=>lighting(elements.lighting.value));
