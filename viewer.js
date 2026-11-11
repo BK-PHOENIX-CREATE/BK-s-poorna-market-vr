@@ -3,7 +3,6 @@ import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {VRButton} from 'three/addons/webxr/VRButton.js';
 
-window.market3dReady=true;
 // Interactive viewer for the user's consolidated SVP Market model.
 // Geometry is pre-optimized; unlike the raw SketchUp export, it contains only 39 material batches.
 const $=(id)=>document.getElementById(id);
@@ -450,11 +449,13 @@ document.addEventListener('mousemove',e=>{if(document.pointerLockElement!==rende
 window.addEventListener('keydown',e=>{if(e.target&&/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName))return;keys.add(e.code);if((currentMode==='walk'||currentMode==='sky')&&['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code))e.preventDefault()});
 window.addEventListener('keyup',e=>keys.delete(e.code));window.addEventListener('blur',()=>keys.clear());
 const loader=new GLTFLoader();
+const defaultModelUrl='/models/svp-market-optimized.glb';
 function load(file){
  if(isLoading)return;
  isLoading=true;tag.textContent='LOADING GEOMETRY';status('Downloading and preparing market model…');
  const splash=$('viewerSplash'),progress=$('loadProgress'),bar=$('loadProgressBar'),progText=$('loadProgressText');
- splash.hidden=false;progress.hidden=false;$('loadModelBtn').disabled=true;$('loadModelBtn').textContent='Preparing 3D experience…';
+ splash.hidden=false;progress.hidden=false;$('loadModelBtn').hidden=true;
+ progText.textContent='Downloading market model…';bar.style.width='0%';
  const isBlob=file instanceof File;const url=isBlob?URL.createObjectURL(file):file;
  loader.load(url,gltf=>{
   if(model){scene.remove(model);model.traverse(obj=>{if(obj.isMesh){obj.geometry?.disposeBoundsTree?.();obj.geometry?.dispose?.()}})}
@@ -477,9 +478,10 @@ function load(file){
   if(isBlob)URL.revokeObjectURL(url);
  },evt=>{if(evt.lengthComputable){const pct=Math.min(98,Math.round(evt.loaded/evt.total*100));bar.style.width=pct+'%';progText.textContent=`Downloading 3D architecture · ${pct}%`;
  }else{progText.textContent=`Downloading model · ${(evt.loaded/1024/1024).toFixed(0)} MB received`}
- },err=>{console.error('Model loading failed',err);tag.textContent='MODEL UNAVAILABLE';isLoading=false;progress.hidden=true;$('loadModelBtn').disabled=false;$('loadModelBtn').textContent='Retry loading the market model';status('Could not load the 3D model. Try refreshing or uploading a GLB from your computer.');notice('Model loading failed. Check your connection or try a local GLB.');if(isBlob)URL.revokeObjectURL(url)});
+ },err=>{console.error('Model loading failed',err);tag.textContent='MODEL UNAVAILABLE';isLoading=false;progress.hidden=true;$('loadModelBtn').hidden=false;status('Could not load the 3D model. Retry the download or upload a GLB from your computer.');notice('Model loading failed. Check your connection or try a local GLB.');if(isBlob)URL.revokeObjectURL(url)});
 }
-$('loadModelBtn').addEventListener('click',()=>load('/models/svp-market-optimized.glb'));
+function loadDefaultModel(){load(defaultModelUrl)}
+$('loadModelBtn').addEventListener('click',loadDefaultModel);
 $('fileButton').addEventListener('click',()=>$('modelFile').click());
 $('modelFile').addEventListener('change',e=>{const file=e.target.files?.[0];if(!file)return;if(!file.name.toLowerCase().endsWith('.glb')){notice('Please choose a .glb file.');return}
  if(file.size>180*1024*1024&&!window.confirm('This model exceeds 180 MB. Large unoptimized GLBs may freeze your browser. Try loading anyway?'))return;
@@ -889,10 +891,12 @@ for(let i=0;i<2;i++){
 renderer.xr.addEventListener('sessionstart',()=>{setRenderingProfile('vr');vrTourStart();xrBackButton.visible=true;xrBackButtonHeld=false;xrTurnVelocity=0;vrWalkState.velocity=0;xrPoseMissing=0;xrSpawnPending=true;rig.rotation.y=0;buildWalkPhysics().then(ok=>{if(ok&&renderer.xr.isPresenting)status('Quest 3 capsule collision ready: walk on ramps & floors; hold right stick to turn');});window.poornaNavigation?.vrStart();window.poornaExhibition?.stop();rig.position.copy(entranceSpawn().position);status('Quest 3: left joystick walks · right joystick smooth turning · trigger teleports.');tag.textContent='IMMERSIVE VR ACTIVE'});
 renderer.xr.addEventListener('sessionend',()=>{setRenderingProfile(isPortableDevice?'mobile':'desktop');vrTourEnd();xrBackButton.visible=false;xrBackButtonHeld=false;window.poornaNavigation?.vrEnd();rig.position.set(0,0,0);tag.textContent=modelLoaded?'ACTUAL MARKET MODEL LOADED':'MODEL READY TO LOAD';setMode('orbit');status('Exited immersive VR mode')});
 $('vrEnterBtn').addEventListener('click',async()=>{
- if(!modelLoaded){notice('Load the actual market model before entering VR.');return}
+ if(!modelLoaded){notice(isLoading?'Wait for the market model to finish loading before entering VR.':'Retry loading the market model before entering VR.');return}
  if(!window.isSecureContext){notice('Immersive VR requires HTTPS. Deploy the site to a secure URL.');return}
  if(!navigator.xr){notice('WebXR is unavailable in this browser. Open the site in a compatible VR headset browser.');return}
  try{const supported=await navigator.xr.isSessionSupported('immersive-vr');if(!supported){notice('Immersive VR is not supported on this device or browser. Desktop walkthrough still works.');return}hiddenVR.click()}
  catch(error){console.error(error);notice('Could not start the VR session. Check headset browser permissions.')}
 });
 window.addEventListener('beforeunload',()=>{renderer.setAnimationLoop(null);environmentTarget?.dispose();renderer.dispose();ro.disconnect();io.disconnect()});
+window.market3dReady=true;
+document.addEventListener('DOMContentLoaded',loadDefaultModel,{once:true});
