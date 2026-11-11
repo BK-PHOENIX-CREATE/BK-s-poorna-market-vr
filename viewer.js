@@ -608,7 +608,7 @@ function updateXRLocomotion(dt,xrFrame){
 const xrBackCanvas=document.createElement('canvas');
 xrBackCanvas.width=512;xrBackCanvas.height=160;
 const xrBackCtx=xrBackCanvas.getContext('2d');
-xrBackCtx.fillStyle='#19291f';xrBackCtx.fillRect(0,0,512,160);
+xrBackCtx.fillStyle='#1d202d';xrBackCtx.fillRect(0,0,512,160);
 xrBackCtx.strokeStyle=viewerAccent;xrBackCtx.lineWidth=8;xrBackCtx.strokeRect(5,5,502,150);
 xrBackCtx.fillStyle='#f5f0df';xrBackCtx.font=`700 ${vrHeadingSize}px ${viewerFont}`;
 xrBackCtx.textAlign='center';xrBackCtx.textBaseline='middle';
@@ -706,7 +706,7 @@ renderer.xr.getController(0).add(vrTourPanel);
 const vrTourTabCanvas=document.createElement('canvas');
 vrTourTabCanvas.width=512;vrTourTabCanvas.height=160;
 const vrTourTabCtx=vrTourTabCanvas.getContext('2d');
-vrTourTabCtx.fillStyle='#1b3026';vrTourTabCtx.fillRect(0,0,512,160);
+vrTourTabCtx.fillStyle='#222531';vrTourTabCtx.fillRect(0,0,512,160);
 vrTourTabCtx.strokeStyle=viewerAccent;vrTourTabCtx.lineWidth=8;vrTourTabCtx.strokeRect(4,4,504,152);
 vrTourTabCtx.textAlign='center';vrTourTabCtx.textBaseline='middle';
 vrTourTabCtx.fillStyle='#fff4dd';vrTourTabCtx.font=`700 ${vrHeadingSize}px ${viewerFont}`;
@@ -725,10 +725,10 @@ let vrTourButtons=[];
 const vrTourRaycaster=new THREE.Raycaster();
 // Canvas text needs to be repainted after the webfonts finish loading.
 Promise.all([500,700].map(weight=>document.fonts.load(`${weight} ${vrBodySize}px ${viewerFont}`))).then(()=>{
- xrBackCtx.fillStyle='#19291f';xrBackCtx.fillRect(14,14,484,132);
+ xrBackCtx.fillStyle='#1d202d';xrBackCtx.fillRect(14,14,484,132);
  xrBackCtx.fillStyle='#f5f0df';xrBackCtx.fillText('← BACK / EXIT VR',256,80,466);
  xrBackTexture.needsUpdate=true;
- vrTourTabCtx.fillStyle='#1b3026';vrTourTabCtx.fillRect(14,14,484,132);
+ vrTourTabCtx.fillStyle='#222531';vrTourTabCtx.fillRect(14,14,484,132);
  vrTourTabCtx.fillStyle='#fff4dd';vrTourTabCtx.fillText('OPEN VR TOUR',256,82,466);
  vrTourTabTexture.needsUpdate=true;
  vrTourRedraw();
@@ -737,7 +737,7 @@ function vrTourRoundRect(x,y,w,h,r,color){
  vrTourCtx.fillStyle=color;
  vrTourCtx.beginPath();vrTourCtx.roundRect(x,y,w,h,r);vrTourCtx.fill();
 }
-function vrTourLine(str,x,y,maxWidth=810,size=vrBodySize,color='#e5eae1'){
+function vrTourLine(str,x,y,maxWidth=810,size=vrBodySize,color='#eae9e4'){
  vrTourCtx.font=`500 ${size}px ${viewerFont}`;
  vrTourCtx.fillStyle=color;vrTourCtx.textAlign='left';vrTourCtx.textBaseline='top';
  const words=String(str||'').split(/\s+/);
@@ -753,16 +753,16 @@ function vrTourLine(str,x,y,maxWidth=810,size=vrBodySize,color='#e5eae1'){
  return yy+size*1.35;
 }
 function vrTourButton(text,x,y,w,h,action,enabled=true){
- vrTourRoundRect(x,y,w,h,15,enabled?viewerAccent:'#465449');
+ vrTourRoundRect(x,y,w,h,15,enabled?viewerAccent:'#4a4c58');
  vrTourCtx.textAlign='center';vrTourCtx.textBaseline='middle';
- vrTourCtx.font=`700 ${vrBodySize}px ${viewerFont}`;vrTourCtx.fillStyle=enabled?viewerInk:'#b4bfb2';
+ vrTourCtx.font=`700 ${vrBodySize}px ${viewerFont}`;vrTourCtx.fillStyle=enabled?viewerInk:'#b8b8c2';
  vrTourCtx.fillText(text,x+w/2,y+h/2);
  if(enabled)vrTourButtons.push({x,y,w,h,action});
 }
 function vrTourRedraw(){
  vrTourButtons=[];
- vrTourCtx.fillStyle='#17271f';vrTourCtx.fillRect(0,0,900,700);
- vrTourCtx.fillStyle='#2b4635';vrTourCtx.fillRect(0,0,900,104);
+ vrTourCtx.fillStyle='#1b1e2b';vrTourCtx.fillRect(0,0,900,700);
+ vrTourCtx.fillStyle='#353844';vrTourCtx.fillRect(0,0,900,104);
  vrTourCtx.fillStyle=viewerAccent;vrTourCtx.textAlign='left';vrTourCtx.textBaseline='middle';
  vrTourCtx.font=`700 ${vrHeadingSize}px ${viewerFont}`;
  vrTourCtx.fillText(vrTourPage==='intro'?'WELCOME TO POORNA MARKET VR':'POORNA MARKET / GUIDED TOUR',34,52,832);
@@ -776,7 +776,7 @@ function vrTourRedraw(){
   ];
   let y=142;
   for(const line of lines){y=vrTourLine(line,40,y,835);y+=15}
-  vrTourLine('Select START TOUR to visit the exhibition stops, or EXPLORE to walk freely.',40,495,825,vrBodySize,'#c9d4c7');
+  vrTourLine('Select START TOUR to visit the exhibition stops, or EXPLORE to walk freely.',40,495,825,vrBodySize,'#cdcdd7');
   vrTourButton('START TOUR',26,588,408,82,'start');
   vrTourButton('EXPLORE',466,588,408,82,'minimize');
  }else{

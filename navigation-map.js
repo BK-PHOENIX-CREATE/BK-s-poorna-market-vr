@@ -18,7 +18,7 @@ const baseCtx=base.getContext('2d',{alpha:false});
 const m={size:256,pad:17,minX:-50,maxX:50,minZ:-50,maxZ:50};
 let ready=false,time=0,vrPanel=null,vrTexture=null,stereo=false,motion=false,orientation=null;
 const marker=new THREE.Vector3(),q=new THREE.Quaternion(),euler=new THREE.Euler(),qfix=new THREE.Quaternion(-Math.sqrt(.5),0,0,Math.sqrt(.5)),qscreen=new THREE.Quaternion(),axis=new THREE.Vector3(0,0,1);
-const clear=()=>{baseCtx.fillStyle='#e6e9df';baseCtx.fillRect(0,0,256,256);baseCtx.strokeStyle='#afbaa9';baseCtx.lineWidth=.75;for(let i=0;i<=10;i++){let p=17+i*22.2;baseCtx.beginPath();baseCtx.moveTo(p,17);baseCtx.lineTo(p,239);baseCtx.moveTo(17,p);baseCtx.lineTo(239,p);baseCtx.stroke()}};
+const clear=()=>{baseCtx.fillStyle='#e8e7e2';baseCtx.fillRect(0,0,256,256);baseCtx.strokeStyle='#b0b1bb';baseCtx.lineWidth=.75;for(let i=0;i<=10;i++){let p=17+i*22.2;baseCtx.beginPath();baseCtx.moveTo(p,17);baseCtx.lineTo(p,239);baseCtx.moveTo(17,p);baseCtx.lineTo(239,p);baseCtx.stroke()}};
 function scaleX(x){return m.pad+(x-m.minX)/(m.maxX-m.minX)*(m.size-2*m.pad)}
 function scaleZ(z){return m.pad+(m.maxZ-z)/(m.maxZ-m.minZ)*(m.size-2*m.pad)}
 function buildBase(){
@@ -48,17 +48,17 @@ function buildBase(){
  triangles.sort((x,y)=>x.y-y.y);
  for(const t of triangles){
    baseCtx.beginPath();baseCtx.moveTo(t.x[0],t.z[0]);baseCtx.lineTo(t.x[1],t.z[1]);baseCtx.lineTo(t.x[2],t.z[2]);baseCtx.closePath();
-   baseCtx.fillStyle=t.flat?'rgba(70,110,88,.29)':'rgba(54,70,62,.42)';
-   baseCtx.strokeStyle=t.flat?'rgba(34,65,45,.12)':'rgba(32,55,46,.31)';
+   baseCtx.fillStyle=t.flat?'rgba(87,89,101,.29)':'rgba(58,61,73,.42)';
+   baseCtx.strokeStyle=t.flat?'rgba(46,49,61,.12)':'rgba(40,43,55,.31)';
    baseCtx.lineWidth=.65;baseCtx.fill();baseCtx.stroke();
  }
- baseCtx.strokeStyle='#263a2f';baseCtx.lineWidth=1;baseCtx.strokeRect(m.pad,m.pad,256-2*m.pad,256-2*m.pad);
+ baseCtx.strokeStyle='#2c2f3b';baseCtx.lineWidth=1;baseCtx.strokeRect(m.pad,m.pad,256-2*m.pad,256-2*m.pad);
  ready=true;panel.hidden=false;
 }
 function drawPosition(){
  if(!ready)return;
  ctx.drawImage(base,0,0);
- ctx.fillStyle='#263a2f';ctx.font=`700 ${mapTitleSize}px ${mapFont}`;ctx.fillText('POORNA / PLAN',17,14);
+ ctx.fillStyle='#2c2f3b';ctx.font=`700 ${mapTitleSize}px ${mapFont}`;ctx.fillText('POORNA / PLAN',17,14);
  if(renderer.xr.isPresenting)renderer.xr.getCamera(camera).getWorldPosition(marker);
  else camera.getWorldPosition(marker);
  const x=Math.min(247,Math.max(9,scaleX(marker.x))),y=Math.min(247,Math.max(9,scaleZ(marker.z)));
@@ -68,7 +68,7 @@ function drawPosition(){
  ctx.save();ctx.translate(x,y);ctx.rotate(angle);
  ctx.fillStyle=mapAccent;ctx.strokeStyle=mapInk;ctx.lineWidth=2;
  ctx.beginPath();ctx.moveTo(0,-11);ctx.lineTo(7,8);ctx.lineTo(0,4);ctx.lineTo(-7,8);ctx.closePath();ctx.fill();ctx.stroke();ctx.restore();
- ctx.fillStyle='#243d31';ctx.font=`700 ${mapLabelSize}px ${mapFont}`;ctx.fillText('YOU',Math.min(222,x+10),Math.max(20,y-12));
+ ctx.fillStyle='#2d303c';ctx.font=`700 ${mapLabelSize}px ${mapFont}`;ctx.fillText('YOU',Math.min(222,x+10),Math.max(20,y-12));
  $('minimapLevel').textContent='● ELEV. '+Math.max(0,marker.y-1.7).toFixed(1)+' m';
  if(vrTexture)vrTexture.needsUpdate=true;
 }
