@@ -119,7 +119,10 @@ function surfaceDetail(source){
   for(let i=0;i<pixels.data.length;i+=4){
    const luminance=.2126*pixels.data[i]+.7152*pixels.data[i+1]+.0722*pixels.data[i+2];
    const height=96+luminance*.25;
-   pixels.data[i]=pixels.data[i+1]=pixels.data[i+2]=height;
+   pixels.data[i]=height;
+   // Green stores roughness, red stores the estimated height.
+   pixels.data[i+1]=235-luminance*.12;
+   pixels.data[i+2]=height;
    pixels.data[i+3]=255;
   }
   context.putImageData(pixels,0,0);
@@ -154,13 +157,19 @@ function setupArchitecturalMaterials(root){
     // Avoid plastic-looking over-gloss on generic masonry and concrete.
     const name=(mat.name||'').toLowerCase();
     if(/brick|concrete|cement|plaster|stone|terracotta|tile|masonry|pavement/.test(name)){
-     mat.roughness=Math.max(.78,mat.roughness);
+     mat.roughness=Math.max(.95,mat.roughness);
      mat.metalness=Math.min(.06,mat.metalness);
     }
     if(mat.map&&!mat.normalMap&&!mat.bumpMap&&/brick|concrete|cement|plaster|stone|terracotta|tile|masonry|pavement|wood/.test(name)){
      mat.bumpMap=surfaceDetail(mat.map);
      mat.bumpScale=/brick|pavement|tile/.test(name)?.035:.012;
      mat.needsUpdate=true;
+    }
+    if(mat.map&&!mat.roughnessMap&&/brick|concrete|cement|plaster|stone|terracotta|tile|masonry|pavement|wood/.test(name)){
+     mat.roughnessMap=surfaceDetail(mat.map);mat.needsUpdate=true;
+    }
+    if(/aluminum|aluminium|metal_profil/.test(name)){
+     mat.metalness=Math.max(.8,mat.metalness);mat.roughness=.38;
     }
     if(/glass|glazing|window/.test(name)){
      mat.roughness=Math.min(.32,Math.max(.08,mat.roughness));
@@ -271,6 +280,102 @@ const grid=new THREE.GridHelper(260,52,0xa4aea3,0xc7d1c6);grid.position.y=-.07;g
 let model=null,modelBounds=new THREE.Box3(new THREE.Vector3(-46,0,-38),new THREE.Vector3(46,20,38));
 let modelLoaded=false,isLoading=false,currentMode='orbit',visible=true,lockRequested=false;
 setRenderingProfile(isPortableDevice?'mobile':'desktop');
+
+const experienceSettings={speed:2,turn:'snap',movement:'walk',seated:false};
+let snapTurnHeld=false,seatedCalibrated=false;
+renderer.localClippingEnabled=true;
+const sectionPlane=new THREE.Plane(new THREE.Vector3(-1,0,0),0);
+const floorTop=new THREE.Plane(new THREE.Vector3(0,-1,0),0);
+const floorBottom=new THREE.Plane(new THREE.Vector3(0,1,0),0);
+function updateSection(){
+ if(!model)return;
+ const selected=$('floorIsolation').value;
+ const height=Number($('storeyHeight').value);
+ const cut=Number($('sectionCut').value);
+ const planes=[];
+ if(currentMode==='walk'&&(selected!=='all'||cut<100))setMode('orbit');
+ if(contactShade)contactShade.visible=selected==='all'&&cut===100;
+ if(selected!=='all'){
+  const base=modelBounds.min.y+Number(selected)*height;
+  floorBottom.constant=-base+.05;floorTop.constant=base+height;
+  planes.push(floorBottom,floorTop);
+ }
+ if(cut<100){
+  sectionPlane.constant=THREE.MathUtils.lerp(modelBounds.min.x,modelBounds.max.x,cut/100);
+  planes.push(sectionPlane);
+ }
+ model.traverse(mesh=>{
+  if(!mesh.isMesh)return;
+  for(const material of Array.isArray(mesh.material)?mesh.material:[mesh.material]){
+   material.clippingPlanes=planes;material.clipShadows=true;material.needsUpdate=true;
+  }
+ });
+ $('sectionValue').textContent=cut===100?'Full building':cut+'%';
+ requestSunShadowUpdate();
+}
+function populateFloors(){
+ if(!model)return;
+ const select=$('floorIsolation');
+ select.replaceChildren(new Option('Full building','all'));
+ const height=Number($('storeyHeight').value);
+ const count=Math.ceil((modelBounds.max.y-modelBounds.min.y)/height);
+ for(let i=0;i<count;i++)select.add(new Option('Level band '+(i+1),String(i)));
+ updateSection();
+}
+function restoreBuilding(){
+ $('floorIsolation').value='all';$('sectionCut').value='100';updateSection();
+}
+$('floorIsolation').addEventListener('change',updateSection);
+$('sectionCut').addEventListener('input',updateSection);
+$('storeyHeight').addEventListener('change',()=>{
+ $('storeyHeight').value=THREE.MathUtils.clamp(Number($('storeyHeight').value)||4.2,2,8);
+ populateFloors();
+});
+$('restoreBuilding').addEventListener('click',restoreBuilding);
+$('walkingSpeed').addEventListener('input',()=>{
+ experienceSettings.speed=Number($('walkingSpeed').value);
+ $('speedValue').textContent=experienceSettings.speed.toFixed(1)+' m/s';
+});
+$('turnStyle').addEventListener('change',()=>{experienceSettings.turn=$('turnStyle').value;snapTurnHeld=false;xrTurnVelocity=0});
+$('movementStyle').addEventListener('change',()=>experienceSettings.movement=$('movementStyle').value);
+$('seatedMode').addEventListener('change',()=>{
+ experienceSettings.seated=$('seatedMode').checked;
+ $('comfortStatus').textContent='Seated height takes effect on your next VR session.';
+});
+let contactShade=null,contactBakeVersion=0;
+async function bakeContactShade(){
+ const version=++contactBakeVersion;
+ if(contactShade){scene.remove(contactShade);contactShade.geometry.dispose();contactShade.material.map.dispose();contactShade.material.dispose();contactShade=null}
+ const bounds=modelBounds.clone().expandByScalar(5);
+ const width=bounds.max.x-bounds.min.x,depth=bounds.max.z-bounds.min.z;
+ const size=64,data=new Uint8Array(size*size*4);
+ const ray=new THREE.Raycaster();ray.firstHitOnly=true;ray.near=.03;ray.far=4;
+ const casters=collisionMeshes.filter(mesh=>mesh.userData.shadowCaster);
+ const directions=[new THREE.Vector3(0,1,0),new THREE.Vector3(.7,1,0).normalize(),new THREE.Vector3(-.7,1,0).normalize(),new THREE.Vector3(0,1,.7).normalize(),new THREE.Vector3(0,1,-.7).normalize()];
+ for(let z=0;z<size;z++){
+  if(version!==contactBakeVersion)return;
+  for(let x=0;x<size;x++){
+   const origin=new THREE.Vector3(bounds.min.x+(x+.5)*width/size,ground.position.y+.04,bounds.max.z-(z+.5)*depth/size);
+   let shade=0;
+   for(const direction of directions){
+    ray.set(origin,direction);
+    const hit=ray.intersectObjects(casters,false)[0];
+    if(hit)shade+=1-hit.distance/4;
+   }
+   const i=(z*size+x)*4;data[i]=data[i+1]=data[i+2]=0;data[i+3]=Math.round(100*shade/directions.length);
+  }
+  if(z%4===0)await new Promise(resolve=>setTimeout(resolve,0));
+ }
+ if(version!==contactBakeVersion)return;
+ const texture=new THREE.DataTexture(data,size,size);
+ texture.magFilter=texture.minFilter=THREE.LinearFilter;texture.needsUpdate=true;
+ contactShade=new THREE.Mesh(new THREE.PlaneGeometry(width,depth),new THREE.MeshBasicMaterial({map:texture,transparent:true,depthWrite:false,toneMapped:false,polygonOffset:true,polygonOffsetFactor:-1}));
+ contactShade.rotation.x=-Math.PI/2;
+ contactShade.position.set((bounds.min.x+bounds.max.x)/2,ground.position.y+.005,(bounds.min.z+bounds.max.z)/2);
+ contactShade.visible=$('floorIsolation').value==='all'&&Number($('sectionCut').value)===100;
+ scene.add(contactShade);
+}
+
 const EYE=1.7, STEP=.55, SLOPE=.55, RADIUS=.28;
 let collisionMeshes=[],collisionReady=false,collisionPromise=null,collisionFailure='',fallSpeed=0;
 const downRay=new THREE.Raycaster(),wallRay=new THREE.Raycaster(),DOWN=new THREE.Vector3(0,-1,0),NORMAL=new THREE.Vector3();
@@ -395,6 +500,7 @@ function makeCamera(mode){
 function setMode(next){
  openingActive=false;orbit.autoRotate=false;
  keys.clear();currentMode=next;
+ if(next==='walk')restoreBuilding();
  document.querySelectorAll('.mode-tab').forEach(button=>{
   const selected=button.dataset.mode===next;
   button.classList.toggle('selected',selected);
@@ -443,11 +549,12 @@ async function buildWalkPhysics(){
      collider.matrixWorld.copy(meshes[i].matrixWorld);
      // Bounds cached once for broad-phase capsule collision culling.
      geometry.computeBoundingBox();
+     collider.userData.shadowCaster=meshes[i].castShadow;
      collider.userData.collisionWorldBox=geometry.boundingBox.clone().applyMatrix4(collider.matrixWorld);
      collisionMeshes.push(collider);
      if(i%3===0){status('Indexing building surfaces '+(i+1)+' / '+meshes.length);await new Promise(resolve=>setTimeout(resolve,0))}
    }
-   collisionReady=true;collisionFailure='';status('Real floor collisions ready.');return true;
+   collisionReady=true;collisionFailure='';status('Real floor collisions ready.');void bakeContactShade().catch(console.warn);return true;
   }catch(e){console.error('Collision geometry failed',e);collisionFailure=String(e?.message||e);collisionMeshes.forEach(mesh=>mesh.material?.dispose?.());collisionMeshes=[];status('Walk collisions failed: '+collisionFailure);return false}
  })();
  const ok=await collisionPromise;if(!ok)collisionPromise=null;return ok;
@@ -538,7 +645,7 @@ renderer.setAnimationLoop((time,xrFrame)=>{
      if(keys.has('KeyD')||keys.has('ArrowRight')){dx+=right.x;dz+=right.z}
      if(keys.has('KeyA')||keys.has('ArrowLeft')){dx-=right.x;dz-=right.z}
      const len=Math.hypot(dx,dz);if(len){dx/=len;dz/=len}
-     const speed=(keys.has('ShiftLeft')||keys.has('ShiftRight')?9:3.4)*delta;
+     const speed=(currentMode==='walk'?experienceSettings.speed:(keys.has('ShiftLeft')||keys.has('ShiftRight')?9:3.4))*delta;
      if(currentMode==='walk'&&collisionReady)moveWalk(dx*speed,dz*speed,delta);
      else if(currentMode==='sky'){
        camera.position.x+=dx*speed;camera.position.z+=dz*speed;
@@ -570,7 +677,7 @@ function load(file){
  progText.textContent='Downloading market model…';bar.style.width='0%';
  const isBlob=file instanceof File;const url=isBlob?URL.createObjectURL(file):file;
  loader.load(url,gltf=>{
-  if(model){scene.remove(model);surfaceDetailMaps.forEach(texture=>texture?.dispose());surfaceDetailMaps.clear();model.traverse(obj=>{if(obj.isMesh){obj.geometry?.disposeBoundsTree?.();obj.geometry?.dispose?.()}})}
+  if(model){contactBakeVersion++;scene.remove(model);surfaceDetailMaps.forEach(texture=>texture?.dispose());surfaceDetailMaps.clear();model.traverse(obj=>{if(obj.isMesh){obj.geometry?.disposeBoundsTree?.();obj.geometry?.dispose?.()}})}
    collisionMeshes.forEach(mesh=>mesh.material?.dispose?.());collisionMeshes=[];collisionReady=false;collisionPromise=null;collisionFailure='';fallSpeed=0;
   model=gltf.scene;
   let meshCount=0;model.traverse(obj=>{if(obj.isMesh){meshCount++;obj.frustumCulled=true}});
@@ -580,7 +687,7 @@ function load(file){
   if(modelBounds.isEmpty()||!Number.isFinite(modelBounds.min.x))throw new Error('Invalid model bounds');
   const modelSize=modelBounds.getSize(new THREE.Vector3());
   if(modelSize.x>2000||modelSize.z>2000){const scale=95/Math.max(modelSize.x,modelSize.z);model.scale.setScalar(scale);modelBounds.setFromObject(model)}
-  scene.add(model);
+  scene.add(model);populateFloors();
   if(activeLighting)configureArchitecturalSun();
   else setLighting('golden');
   setRenderingProfile(renderer.xr.isPresenting?'vr':(isPortableDevice?'mobile':'desktop'));
@@ -681,6 +788,15 @@ function xrSmoothTurn(head,angle,xrFrame){
 }
 function updateXRLocomotion(dt,xrFrame){
  if(!renderer.xr.isPresenting)return;
+ if(experienceSettings.seated&&!seatedCalibrated){
+  const reference=renderer.xr.getReferenceSpace();
+  const pose=xrFrame?.getViewerPose(reference);
+  if(pose){
+   const lift=Math.max(0,Math.min(.8,EYE-pose.transform.position.y));
+   renderer.xr.setReferenceSpace(reference.getOffsetReferenceSpace(new XRRigidTransform({y:-lift})));
+   seatedCalibrated=true;
+  }
+ }
  const sources=renderer.xr.getSession()?.inputSources||[];
  let left=null,right=null;
  for(const src of sources){
@@ -721,15 +837,20 @@ function updateXRLocomotion(dt,xrFrame){
  let dx=0,dz=0;
  if(magnitude>.16){
   const adjusted=(magnitude-.16)/.84;
-  const dist=2.6*dt*adjusted/magnitude;
+  const dist=(experienceSettings.movement==='teleport'?0:experienceSettings.speed)*dt*adjusted/magnitude;
   dx=(xrFw.x*(-walk.y)+xrRt.x*walk.x)*dist;
   dz=(xrFw.z*(-walk.y)+xrRt.z*walk.x)*dist;
  }
  if(collisionReady)xrGroundFollow(trackedHead,dx,dz,dt);
  // Diagnostics use the tracked world position *after* the rig moved.
  const analog=Math.abs(turn.x)<.16?0:Math.sign(turn.x)*(Math.abs(turn.x)-.16)/.84;
- xrTurnVelocity=THREE.MathUtils.damp(xrTurnVelocity,-analog*XR_TURN_RATE,XR_TURN_RESPONSE,dt);
- if(Math.abs(xrTurnVelocity)>.001)xrSmoothTurn(null,xrTurnVelocity*dt,xrFrame);
+ if(experienceSettings.turn==='snap'){
+  if(Math.abs(turn.x)<.25)snapTurnHeld=false;
+  if(Math.abs(turn.x)>.65&&!snapTurnHeld){snapTurnHeld=true;xrSmoothTurn(null,-Math.sign(turn.x)*Math.PI/6,xrFrame)}
+ }else{
+  xrTurnVelocity=THREE.MathUtils.damp(xrTurnVelocity,-analog*XR_TURN_RATE,XR_TURN_RESPONSE,dt);
+  if(Math.abs(xrTurnVelocity)>.001)xrSmoothTurn(null,xrTurnVelocity*dt,xrFrame);
+ }
 }
 // Immersive-VR entry and controller teleportation; available only on supported secure origins.
 // Back to website: visible in the headset, selectable with either trigger.
@@ -897,8 +1018,8 @@ function vrTourRedraw(){
  vrTourCtx.fillText(vrTourPage==='intro'?'WELCOME TO POORNA MARKET VR':'POORNA MARKET / GUIDED TOUR',34,52,832);
  if(vrTourPage==='intro'){
   const lines=[
-   'LEFT JOYSTICK     Walk forward / back / sideways',
-   'RIGHT JOYSTICK   Hold left or right to turn',
+   experienceSettings.movement==='teleport'?'CONTROLLER TRIGGER   Point to teleport':'LEFT JOYSTICK     Walk forward / back / sideways',
+   experienceSettings.turn==='snap'?'RIGHT JOYSTICK   Tap to turn 30 degrees':'RIGHT JOYSTICK   Hold to turn smoothly',
    'CONTROLLER TRIGGER   Teleport or select buttons',
    'LEFT CONTROLLER   Map, tour and Exit VR',
    'RIGHT B BUTTON   Return to website'
@@ -1015,7 +1136,7 @@ for(let i=0;i<2;i++){
  const ray=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3(0,0,-1)]),new THREE.LineBasicMaterial({color:0xdac28e}));ray.scale.z=8;controller.add(ray);
  controller.addEventListener('selectstart',()=>{if(renderer.xr.isPresenting&&!selectVRBack(controller)&&!selectVRTour(controller))moveToController(controller)})
 }
-renderer.xr.addEventListener('sessionstart',()=>{stopOpening();setRenderingProfile('vr');vrTourStart();xrBackButton.visible=true;xrBackButtonHeld=false;xrTurnVelocity=0;vrWalkState.velocity=0;xrPoseMissing=0;xrSpawnPending=true;rig.rotation.y=0;buildWalkPhysics().then(ok=>{if(ok&&renderer.xr.isPresenting)status('Quest 3 capsule collision ready: walk on ramps & floors; hold right stick to turn');});window.poornaNavigation?.vrStart();window.poornaExhibition?.stop();rig.position.copy(entranceSpawn().position);status('Quest 3: left joystick walks · right joystick smooth turning · trigger teleports.');tag.textContent='IMMERSIVE VR ACTIVE'});
+renderer.xr.addEventListener('sessionstart',()=>{restoreBuilding();seatedCalibrated=false;snapTurnHeld=false;stopOpening();setRenderingProfile('vr');vrTourStart();xrBackButton.visible=true;xrBackButtonHeld=false;xrTurnVelocity=0;vrWalkState.velocity=0;xrPoseMissing=0;xrSpawnPending=true;rig.rotation.y=0;buildWalkPhysics().then(ok=>{if(ok&&renderer.xr.isPresenting)status('Quest 3 capsule collision ready: walk on ramps & floors; hold right stick to turn');});window.poornaNavigation?.vrStart();window.poornaExhibition?.stop();rig.position.copy(entranceSpawn().position);status('Quest 3: left joystick walks · right joystick smooth turning · trigger teleports.');tag.textContent='IMMERSIVE VR ACTIVE'});
 renderer.xr.addEventListener('sessionend',()=>{setRenderingProfile(isPortableDevice?'mobile':'desktop');vrTourEnd();xrBackButton.visible=false;xrBackButtonHeld=false;window.poornaNavigation?.vrEnd();rig.position.set(0,0,0);tag.textContent=modelLoaded?'ACTUAL MARKET MODEL LOADED':'MODEL READY TO LOAD';setMode('orbit');status('Exited immersive VR mode')});
 $('vrEnterBtn').addEventListener('click',async()=>{
  if(!modelLoaded){notice(isLoading?'Wait for the market model to finish loading before entering VR.':'Retry loading the market model before entering VR.');return}
@@ -1024,6 +1145,6 @@ $('vrEnterBtn').addEventListener('click',async()=>{
  try{const supported=await navigator.xr.isSessionSupported('immersive-vr');if(!supported){notice('Immersive VR is not supported on this device or browser. Desktop walkthrough still works.');return}hiddenVR.click()}
  catch(error){console.error(error);notice('Could not start the VR session. Check headset browser permissions.')}
 });
-window.addEventListener('beforeunload',()=>{renderer.setAnimationLoop(null);skyMaps.forEach(texture=>texture.dispose());surfaceDetailMaps.forEach(texture=>texture?.dispose());renderer.dispose();ro.disconnect();io.disconnect()});
+window.addEventListener('beforeunload',()=>{contactBakeVersion++;if(contactShade){contactShade.geometry.dispose();contactShade.material.map.dispose();contactShade.material.dispose();}renderer.setAnimationLoop(null);skyMaps.forEach(texture=>texture.dispose());surfaceDetailMaps.forEach(texture=>texture?.dispose());renderer.dispose();ro.disconnect();io.disconnect()});
 window.market3dReady=true;
 document.addEventListener('DOMContentLoaded',loadDefaultModel,{once:true});
