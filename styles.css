@@ -472,3 +472,47 @@
   .poorna-minimap { right: 10px; bottom: 10px; }
   .viewer-shell .viewer-footer span:last-child { display: none; }
 }
+
+/* Cinematic presentation */
+.hero {
+  background: radial-gradient(ellipse at 80% 20%, #384050 0, #192338 40%, #101724 80%);
+}
+.hero-art { background: #161f30; }
+.hero-plan { transform: rotate(-2deg); box-shadow: 0 40px 100px #0009; }
+.hero-art::after {
+  background: linear-gradient(90deg, #19233888, transparent 48%), linear-gradient(0deg, #101724dd, transparent 60%);
+}
+.experience-section {
+  background: radial-gradient(ellipse at 50% 40%, #293348, #111827 75%);
+}
+.experience-heading { max-width: 1200px; margin-inline: auto; }
+.viewer-shell { box-shadow: 0 40px 100px #0008, 0 0 0 1px #ffffff08; }
+.viewer-shell .viewport::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  background: radial-gradient(ellipse at 50% 45%, transparent 55%, #11182724 100%);
+}
+.film-section { background: #101724; color: var(--white); }
+.film-section .section-rule { background: #ffffff26; }
+.film-section .section-side, .film-intro > p { color: #b9c2d1; }
+.film-section .overline, .film-intro h2 em { color: var(--accent); }
+.film-stage {
+  border-radius: 20px;
+  overflow: hidden;
+  border: 1px solid #ffffff26;
+  box-shadow: 0 40px 100px #0008;
+  background: #080d16;
+}
+.film-topline, .film-bottomline { background: #101724; }
+#projectFilm { background: #080d16; }
+@media (prefers-reduced-motion: no-preference) {
+  .hero-copy { animation: cinema-arrival 900ms ease-out both; }
+  .hero-art { animation: cinema-arrival 1200ms ease-out both; }
+}
+@keyframes cinema-arrival {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
