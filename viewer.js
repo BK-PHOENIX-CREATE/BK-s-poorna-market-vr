@@ -81,6 +81,45 @@ function setRenderingProfile(next){
  // renders once, rather than generating it on every headset frame.
  requestSunShadowUpdate();
 }
+// Subtle relief estimated from the existing surface photographs.
+// These maps are cached per texture and retain the model's UV transforms.
+const surfaceDetailMaps=new Map();
+function surfaceDetail(source){
+ if(surfaceDetailMaps.has(source))return surfaceDetailMaps.get(source);
+ const image=source.image;
+ if(!image?.width||!image?.height)return null;
+ const canvas=document.createElement('canvas');
+ const scale=Math.min(1,512/Math.max(image.width,image.height));
+ canvas.width=Math.max(1,Math.round(image.width*scale));
+ canvas.height=Math.max(1,Math.round(image.height*scale));
+ const context=canvas.getContext('2d',{willReadFrequently:true});
+ try{
+  context.drawImage(image,0,0,canvas.width,canvas.height);
+  const pixels=context.getImageData(0,0,canvas.width,canvas.height);
+  for(let i=0;i<pixels.data.length;i+=4){
+   const luminance=.2126*pixels.data[i]+.7152*pixels.data[i+1]+.0722*pixels.data[i+2];
+   const height=96+luminance*.25;
+   pixels.data[i]=pixels.data[i+1]=pixels.data[i+2]=height;
+   pixels.data[i+3]=255;
+  }
+  context.putImageData(pixels,0,0);
+  const texture=new THREE.CanvasTexture(canvas);
+  texture.colorSpace=THREE.NoColorSpace;
+  texture.flipY=source.flipY;
+  texture.wrapS=source.wrapS;texture.wrapT=source.wrapT;
+  texture.channel=source.channel;
+  texture.offset.copy(source.offset);texture.repeat.copy(source.repeat);
+  texture.center.copy(source.center);texture.rotation=source.rotation;
+  texture.matrixAutoUpdate=source.matrixAutoUpdate;
+  texture.matrix.copy(source.matrix);
+  surfaceDetailMaps.set(source,texture);
+  return texture;
+ }catch(error){
+  console.warn('Surface detail unavailable for',source.name,error);
+  surfaceDetailMaps.set(source,null);
+  return null;
+ }
+}
 function setupArchitecturalMaterials(root){
  const maxAnisotropy=Math.min(8,renderer.capabilities.getMaxAnisotropy());
  const visited=new Set();
@@ -94,15 +133,20 @@ function setupArchitecturalMaterials(root){
     // Maintain authored albedo, normal, metalness and roughness maps.
     // Avoid plastic-looking over-gloss on generic masonry and concrete.
     const name=(mat.name||'').toLowerCase();
-    if(/brick|concrete|cement|plaster|stone|terracotta|tile|masonry/.test(name)){
+    if(/brick|concrete|cement|plaster|stone|terracotta|tile|masonry|pavement/.test(name)){
      mat.roughness=Math.max(.78,mat.roughness);
      mat.metalness=Math.min(.06,mat.metalness);
+    }
+    if(mat.map&&!mat.normalMap&&!mat.bumpMap&&/brick|concrete|cement|plaster|stone|terracotta|tile|masonry|pavement|wood/.test(name)){
+     mat.bumpMap=surfaceDetail(mat.map);
+     mat.bumpScale=/brick|pavement|tile/.test(name)?.035:.012;
+     mat.needsUpdate=true;
     }
     if(/glass|glazing|window/.test(name)){
      mat.roughness=Math.min(.32,Math.max(.08,mat.roughness));
     }
    }
-   for(const key of ['map','normalMap','roughnessMap','metalnessMap','aoMap']){
+   for(const key of ['map','normalMap','bumpMap','roughnessMap','metalnessMap','aoMap']){
     const tex=mat[key];
     if(tex){tex.anisotropy=maxAnisotropy;tex.needsUpdate=true}
    }
@@ -504,7 +548,7 @@ function load(file){
  progText.textContent='Downloading market model…';bar.style.width='0%';
  const isBlob=file instanceof File;const url=isBlob?URL.createObjectURL(file):file;
  loader.load(url,gltf=>{
-  if(model){scene.remove(model);model.traverse(obj=>{if(obj.isMesh){obj.geometry?.disposeBoundsTree?.();obj.geometry?.dispose?.()}})}
+  if(model){scene.remove(model);surfaceDetailMaps.forEach(texture=>texture?.dispose());surfaceDetailMaps.clear();model.traverse(obj=>{if(obj.isMesh){obj.geometry?.disposeBoundsTree?.();obj.geometry?.dispose?.()}})}
    collisionMeshes.forEach(mesh=>mesh.material?.dispose?.());collisionMeshes=[];collisionReady=false;collisionPromise=null;collisionFailure='';fallSpeed=0;
   model=gltf.scene;
   let meshCount=0;model.traverse(obj=>{if(obj.isMesh){meshCount++;obj.frustumCulled=true}});
@@ -958,6 +1002,6 @@ $('vrEnterBtn').addEventListener('click',async()=>{
  try{const supported=await navigator.xr.isSessionSupported('immersive-vr');if(!supported){notice('Immersive VR is not supported on this device or browser. Desktop walkthrough still works.');return}hiddenVR.click()}
  catch(error){console.error(error);notice('Could not start the VR session. Check headset browser permissions.')}
 });
-window.addEventListener('beforeunload',()=>{renderer.setAnimationLoop(null);skyMaps.forEach(texture=>texture.dispose());renderer.dispose();ro.disconnect();io.disconnect()});
+window.addEventListener('beforeunload',()=>{renderer.setAnimationLoop(null);skyMaps.forEach(texture=>texture.dispose());surfaceDetailMaps.forEach(texture=>texture?.dispose());renderer.dispose();ro.disconnect();io.disconnect()});
 window.market3dReady=true;
 document.addEventListener('DOMContentLoaded',loadDefaultModel,{once:true});
