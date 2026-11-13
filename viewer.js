@@ -281,8 +281,8 @@ let model=null,modelBounds=new THREE.Box3(new THREE.Vector3(-46,0,-38),new THREE
 let modelLoaded=false,isLoading=false,currentMode='orbit',visible=true,lockRequested=false;
 setRenderingProfile(isPortableDevice?'mobile':'desktop');
 
-const experienceSettings={speed:2,turn:'snap',movement:'walk',seated:false};
-let snapTurnHeld=false,seatedCalibrated=false;
+const experienceSettings={speed:2,movement:'walk',seated:false};
+let seatedCalibrated=false;
 renderer.localClippingEnabled=true;
 const sectionPlane=new THREE.Plane(new THREE.Vector3(-1,0,0),0);
 const floorTop=new THREE.Plane(new THREE.Vector3(0,-1,0),0);
@@ -336,7 +336,6 @@ $('walkingSpeed').addEventListener('input',()=>{
  experienceSettings.speed=Number($('walkingSpeed').value);
  $('speedValue').textContent=experienceSettings.speed.toFixed(1)+' m/s';
 });
-$('turnStyle').addEventListener('change',()=>{experienceSettings.turn=$('turnStyle').value;snapTurnHeld=false;xrTurnVelocity=0});
 $('movementStyle').addEventListener('change',()=>experienceSettings.movement=$('movementStyle').value);
 $('seatedMode').addEventListener('change',()=>{
  experienceSettings.seated=$('seatedMode').checked;
@@ -844,13 +843,8 @@ function updateXRLocomotion(dt,xrFrame){
  if(collisionReady)xrGroundFollow(trackedHead,dx,dz,dt);
  // Diagnostics use the tracked world position *after* the rig moved.
  const analog=Math.abs(turn.x)<.16?0:Math.sign(turn.x)*(Math.abs(turn.x)-.16)/.84;
- if(experienceSettings.turn==='snap'){
-  if(Math.abs(turn.x)<.25)snapTurnHeld=false;
-  if(Math.abs(turn.x)>.65&&!snapTurnHeld){snapTurnHeld=true;xrSmoothTurn(null,-Math.sign(turn.x)*Math.PI/6,xrFrame)}
- }else{
-  xrTurnVelocity=THREE.MathUtils.damp(xrTurnVelocity,-analog*XR_TURN_RATE,XR_TURN_RESPONSE,dt);
-  if(Math.abs(xrTurnVelocity)>.001)xrSmoothTurn(null,xrTurnVelocity*dt,xrFrame);
- }
+ xrTurnVelocity=THREE.MathUtils.damp(xrTurnVelocity,-analog*XR_TURN_RATE,XR_TURN_RESPONSE,dt);
+ if(Math.abs(xrTurnVelocity)>.001)xrSmoothTurn(null,xrTurnVelocity*dt,xrFrame);
 }
 // Immersive-VR entry and controller teleportation; available only on supported secure origins.
 // Back to website: visible in the headset, selectable with either trigger.
@@ -1019,7 +1013,7 @@ function vrTourRedraw(){
  if(vrTourPage==='intro'){
   const lines=[
    experienceSettings.movement==='teleport'?'CONTROLLER TRIGGER   Point to teleport':'LEFT JOYSTICK     Walk forward / back / sideways',
-   experienceSettings.turn==='snap'?'RIGHT JOYSTICK   Tap to turn 30 degrees':'RIGHT JOYSTICK   Hold to turn smoothly',
+   'RIGHT JOYSTICK   Hold to turn smoothly',
    'CONTROLLER TRIGGER   Teleport or select buttons',
    'LEFT CONTROLLER   Map, tour and Exit VR',
    'RIGHT B BUTTON   Return to website'
@@ -1136,7 +1130,7 @@ for(let i=0;i<2;i++){
  const ray=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3(0,0,-1)]),new THREE.LineBasicMaterial({color:0xdac28e}));ray.scale.z=8;controller.add(ray);
  controller.addEventListener('selectstart',()=>{if(renderer.xr.isPresenting&&!selectVRBack(controller)&&!selectVRTour(controller))moveToController(controller)})
 }
-renderer.xr.addEventListener('sessionstart',()=>{restoreBuilding();seatedCalibrated=false;snapTurnHeld=false;stopOpening();setRenderingProfile('vr');vrTourStart();xrBackButton.visible=true;xrBackButtonHeld=false;xrTurnVelocity=0;vrWalkState.velocity=0;xrPoseMissing=0;xrSpawnPending=true;rig.rotation.y=0;buildWalkPhysics().then(ok=>{if(ok&&renderer.xr.isPresenting)status('Quest 3 capsule collision ready: walk on ramps & floors; hold right stick to turn');});window.poornaNavigation?.vrStart();window.poornaExhibition?.stop();rig.position.copy(entranceSpawn().position);status('Quest 3: left joystick walks · right joystick smooth turning · trigger teleports.');tag.textContent='IMMERSIVE VR ACTIVE'});
+renderer.xr.addEventListener('sessionstart',()=>{restoreBuilding();seatedCalibrated=false;stopOpening();setRenderingProfile('vr');vrTourStart();xrBackButton.visible=true;xrBackButtonHeld=false;xrTurnVelocity=0;vrWalkState.velocity=0;xrPoseMissing=0;xrSpawnPending=true;rig.rotation.y=0;buildWalkPhysics().then(ok=>{if(ok&&renderer.xr.isPresenting)status('Quest 3 capsule collision ready: walk on ramps & floors; hold right stick to turn');});window.poornaNavigation?.vrStart();window.poornaExhibition?.stop();rig.position.copy(entranceSpawn().position);status('Quest 3: left joystick walks · right joystick smooth turning · trigger teleports.');tag.textContent='IMMERSIVE VR ACTIVE'});
 renderer.xr.addEventListener('sessionend',()=>{setRenderingProfile(isPortableDevice?'mobile':'desktop');vrTourEnd();xrBackButton.visible=false;xrBackButtonHeld=false;window.poornaNavigation?.vrEnd();rig.position.set(0,0,0);tag.textContent=modelLoaded?'ACTUAL MARKET MODEL LOADED':'MODEL READY TO LOAD';setMode('orbit');status('Exited immersive VR mode')});
 $('vrEnterBtn').addEventListener('click',async()=>{
  if(!modelLoaded){notice(isLoading?'Wait for the market model to finish loading before entering VR.':'Retry loading the market model before entering VR.');return}
