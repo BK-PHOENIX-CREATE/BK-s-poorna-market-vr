@@ -38,6 +38,26 @@ mount.appendChild(renderer.domElement);
 const orbit=new OrbitControls(camera,renderer.domElement);
 orbit.enableDamping=true;orbit.dampingFactor=.07;orbit.maxPolarAngle=Math.PI*.49;orbit.minDistance=3;orbit.maxDistance=220;
 orbit.target.set(0,6,0);
+const reducedMotion=window.matchMedia('(prefers-reduced-motion: reduce)');
+let openingElapsed=0,openingActive=false,viewerTouched=false;
+function stopOpening(){
+ viewerTouched=true;
+ openingActive=false;
+ orbit.autoRotate=false;
+ orbit.autoRotateSpeed=0;
+}
+$('viewerShell').addEventListener('pointerdown',stopOpening,{capture:true});
+$('viewerShell').addEventListener('wheel',stopOpening,{passive:true,capture:true});
+$('viewerShell').addEventListener('keydown',stopOpening,{capture:true});
+reducedMotion.addEventListener('change',stopOpening);
+function updateOpening(delta){
+ if(!openingActive)return;
+ if(renderer.xr.isPresenting||currentMode!=='orbit'||reducedMotion.matches){stopOpening();return}
+ openingElapsed=Math.min(8,openingElapsed+delta);
+ orbit.autoRotateSpeed=.65*Math.sin(Math.PI*openingElapsed/8);
+ orbit.autoRotate=openingElapsed<8;
+ if(openingElapsed===8)openingActive=false;
+}
 const skylight=new THREE.HemisphereLight(0xe7eff3,0x8b7050,1.35);
 scene.add(skylight);
 const ambient=new THREE.AmbientLight(0xffffff,.12);scene.add(ambient);
@@ -373,6 +393,7 @@ function makeCamera(mode){
  }
 }
 function setMode(next){
+ openingActive=false;orbit.autoRotate=false;
  keys.clear();currentMode=next;
  document.querySelectorAll('.mode-tab').forEach(button=>{
   const selected=button.dataset.mode===next;
@@ -507,6 +528,7 @@ const clock=new THREE.Clock();
 renderer.setAnimationLoop((time,xrFrame)=>{
  const delta=Math.min(clock.getDelta(),.05);
  if(!visible&&!renderer.xr.isPresenting)return;
+ updateOpening(delta);
  if(!renderer.xr.isPresenting){
    if(currentMode==='sky'||currentMode==='walk'){
      const forward=new THREE.Vector3(-Math.sin(yaw),0,-Math.cos(yaw)),right=new THREE.Vector3(-forward.z,0,forward.x);
@@ -527,7 +549,7 @@ renderer.setAnimationLoop((time,xrFrame)=>{
        camera.position.z=THREE.MathUtils.clamp(camera.position.z,bounds.min.z,bounds.max.z);
        camera.position.y=THREE.MathUtils.clamp(camera.position.y,modelBounds.min.y+EYE,modelBounds.max.y+60);
      }
-   }else orbit.update();
+   }else orbit.update(delta);
  }
  if(renderer.xr.isPresenting){try{updateXRLocomotion(delta,xrFrame);updateXRBackShortcut()}catch(error){console.error('Quest VR controller error',error)}}
  window.poornaExhibition?.tick(delta);
@@ -560,11 +582,11 @@ function load(file){
   if(modelSize.x>2000||modelSize.z>2000){const scale=95/Math.max(modelSize.x,modelSize.z);model.scale.setScalar(scale);modelBounds.setFromObject(model)}
   scene.add(model);
   if(activeLighting)configureArchitecturalSun();
-  else setLighting('day');
+  else setLighting('golden');
   setRenderingProfile(renderer.xr.isPresenting?'vr':(isPortableDevice?'mobile':'desktop'));
   requestSunShadowUpdate();
   modelLoaded=true;isLoading=false;tag.textContent='ACTUAL MARKET MODEL LOADED';splash.hidden=true;progress.hidden=true;grid.visible=false;ground.visible=true;
-  setMode('orbit');writeStartToUI();buildWalkPhysics().catch(error=>console.error('Preparing VR walking surfaces',error));window.poornaExhibition?.modelReady();window.poornaNavigation?.modelReady();status(`Loaded successfully · ${meshCount} draw groups · Orbit / Sky / Walk / Plan / VR available`);
+  setMode('orbit');openingElapsed=0;openingActive=!viewerTouched&&!reducedMotion.matches&&!renderer.xr.isPresenting;writeStartToUI();buildWalkPhysics().catch(error=>console.error('Preparing VR walking surfaces',error));window.poornaExhibition?.modelReady();window.poornaNavigation?.modelReady();status(`Loaded successfully · ${meshCount} draw groups · Orbit / Sky / Walk / Plan / VR available`);
   if(isBlob)URL.revokeObjectURL(url);
  },evt=>{if(evt.lengthComputable){const pct=Math.min(98,Math.round(evt.loaded/evt.total*100));bar.style.width=pct+'%';progText.textContent=`Downloading 3D architecture · ${pct}%`;
  }else{progText.textContent=`Downloading model · ${(evt.loaded/1024/1024).toFixed(0)} MB received`}
@@ -993,7 +1015,7 @@ for(let i=0;i<2;i++){
  const ray=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3(0,0,-1)]),new THREE.LineBasicMaterial({color:0xdac28e}));ray.scale.z=8;controller.add(ray);
  controller.addEventListener('selectstart',()=>{if(renderer.xr.isPresenting&&!selectVRBack(controller)&&!selectVRTour(controller))moveToController(controller)})
 }
-renderer.xr.addEventListener('sessionstart',()=>{setRenderingProfile('vr');vrTourStart();xrBackButton.visible=true;xrBackButtonHeld=false;xrTurnVelocity=0;vrWalkState.velocity=0;xrPoseMissing=0;xrSpawnPending=true;rig.rotation.y=0;buildWalkPhysics().then(ok=>{if(ok&&renderer.xr.isPresenting)status('Quest 3 capsule collision ready: walk on ramps & floors; hold right stick to turn');});window.poornaNavigation?.vrStart();window.poornaExhibition?.stop();rig.position.copy(entranceSpawn().position);status('Quest 3: left joystick walks · right joystick smooth turning · trigger teleports.');tag.textContent='IMMERSIVE VR ACTIVE'});
+renderer.xr.addEventListener('sessionstart',()=>{stopOpening();setRenderingProfile('vr');vrTourStart();xrBackButton.visible=true;xrBackButtonHeld=false;xrTurnVelocity=0;vrWalkState.velocity=0;xrPoseMissing=0;xrSpawnPending=true;rig.rotation.y=0;buildWalkPhysics().then(ok=>{if(ok&&renderer.xr.isPresenting)status('Quest 3 capsule collision ready: walk on ramps & floors; hold right stick to turn');});window.poornaNavigation?.vrStart();window.poornaExhibition?.stop();rig.position.copy(entranceSpawn().position);status('Quest 3: left joystick walks · right joystick smooth turning · trigger teleports.');tag.textContent='IMMERSIVE VR ACTIVE'});
 renderer.xr.addEventListener('sessionend',()=>{setRenderingProfile(isPortableDevice?'mobile':'desktop');vrTourEnd();xrBackButton.visible=false;xrBackButtonHeld=false;window.poornaNavigation?.vrEnd();rig.position.set(0,0,0);tag.textContent=modelLoaded?'ACTUAL MARKET MODEL LOADED':'MODEL READY TO LOAD';setMode('orbit');status('Exited immersive VR mode')});
 $('vrEnterBtn').addEventListener('click',async()=>{
  if(!modelLoaded){notice(isLoading?'Wait for the market model to finish loading before entering VR.':'Retry loading the market model before entering VR.');return}
